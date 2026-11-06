@@ -1,0 +1,19 @@
+# Runtime data & secrets — never commit
+data/
+data-preview/
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+
+# Dependencies
+node_modules/
+
+# Logs & OS cruft
+*.log
+.DS_Store
+Thumbs.db
+
+# Local editor/agent settings
+.claude/settings.local.json

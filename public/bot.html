@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>AI Bots · NECTRA</title>
+  <meta name="description" content="Describe strategies in plain English, backtest them, and deploy bots in paper trading.">
+  <meta name="theme-color" content="#0A0A0C">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <script>try{var t=localStorage.getItem('nx-theme');if(t)document.documentElement.dataset.theme=JSON.parse(t)}catch(e){}</script>
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="assets/css/nectra.css">
+</head>
+<body class="app" data-page="bot">
+  <a class="skip" href="#main">Skip to content</a>
+  <main id="main" class="page">
+    <div class="page__head">
+      <div>
+        <h1 class="page__title">AI Bots</h1>
+        <p class="page__sub">Tell the Copilot what you want. Review every rule. Then deploy.</p>
+      </div>
+      <div class="page__actions">
+        <label class="switch btn" style="padding:0 14px" data-tip="Simulate trades with mock funds against live prices" data-tip-pos="bottom">
+          <input type="checkbox" id="paper-toggle" checked><span class="switch__track"></span><span class="small strong">Paper trading</span>
+        </label>
+        <div class="kill"><button class="btn btn--danger" id="kill-btn"><span class="dot"></span> Pause all bots</button></div>
+      </div>
+    </div>
+
+    <div class="note note--warn mb-16"><i data-i="alert"></i><span><strong>Automated trading carries risk of loss.</strong> AI-generated strategies can be wrong. Backtests don’t guarantee future results. All bots run in paper mode by default.</span></div>
+
+    <div class="grid stagger">
+      <!-- Chat Copilot -->
+      <section class="card card--flush span-7" aria-labelledby="chat-title" style="display:flex;flex-direction:column;min-height:560px">
+        <div class="card__head" style="padding:16px 20px;margin:0;border-bottom:1px solid var(--border)">
+          <h2 class="card__title" id="chat-title"><span data-logo="24" class="logo--breathe"></span> Copilot</h2>
+          <span class="tag tag--paper"><i data-i="activity"></i> Paper trading</span>
+        </div>
+        <div class="chat" id="chat-main" data-chat="main"></div>
+      </section>
+
+      <!-- Backtest -->
+      <section class="card span-5" aria-labelledby="bt-title">
+        <div class="card__head"><h2 class="card__title" id="bt-title"><i data-i="bar-chart"></i> Backtest</h2>
+          <div class="seg" role="tablist" aria-label="Backtest period" id="bt-range"><button class="seg__btn" role="tab" aria-selected="false">30D</button><button class="seg__btn" role="tab" aria-selected="true">90D</button><button class="seg__btn" role="tab" aria-selected="false">1Y</button></div></div>
+        <div class="row-nw mb-16"><label class="sr-only" for="bt-strategy">Strategy</label>
+          <select class="select grow" id="bt-strategy"></select>
+          <button class="btn btn--accent" id="bt-run"><i data-i="play"></i> Run</button></div>
+        <div id="bt-chart" style="height:220px"></div>
+        <div class="metric-grid mt-16" id="bt-metrics">
+          <div class="metric"><div class="kpi__label">Win rate <span class="help" tabindex="0" data-tip="Percentage of simulated trades that closed in profit.">?</span></div><div class="kpi__value">–</div></div>
+          <div class="metric"><div class="kpi__label">Max drawdown <span class="help" tabindex="0" data-tip="Largest peak-to-trough fall in simulated equity. Lower is safer.">?</span></div><div class="kpi__value">–</div></div>
+          <div class="metric"><div class="kpi__label">Sharpe <span class="help" tabindex="0" data-tip="Return per unit of volatility. Above 1 is generally considered good." data-tip-pos="left">?</span></div><div class="kpi__value">–</div></div>
+          <div class="metric"><div class="kpi__label">Total return</div><div class="kpi__value">–</div></div>
+        </div>
+        <p class="caption mt-12" id="bt-source">Same engine logic as live bots, on real hourly prices incl. 0.1% fees. Past performance ≠ future results.</p>
+      </section>
+
+      <!-- Active bots -->
+      <section class="card" aria-labelledby="ab-title">
+        <div class="card__head"><h2 class="card__title" id="ab-title"><i data-i="bot"></i> Your bots</h2></div>
+        <div class="table-wrap"><table class="table table--stack">
+          <thead><tr><th>Bot</th><th>Strategy</th><th>Pair</th><th>Mode</th><th class="r">PnL</th><th>Status</th><th></th></tr></thead>
+          <tbody id="active-body"></tbody>
+        </table></div>
+      </section>
+
+      <!-- Templates -->
+      <section aria-labelledby="tpl-title">
+        <h2 class="section-title" id="tpl-title">Strategy templates</h2>
+        <div class="grid-auto" id="tpl-grid"></div>
+      </section>
+
+      <!-- Copy-trading leaderboard -->
+      <section class="card" aria-labelledby="lb-title">
+        <div class="card__head"><div><h2 class="card__title" id="lb-title"><i data-i="copytrade"></i> Copy-trading leaderboard</h2><p class="card__sub">Track records verified on-chain. Copying is capped by your own budget & stop-loss.</p></div></div>
+        <div class="table-wrap"><table class="table table--stack">
+          <thead><tr><th>Trader</th><th class="r">90d return</th><th class="r">Max DD</th><th class="r">Win rate</th><th class="r">Trend</th><th class="r">Followers</th><th></th></tr></thead>
+          <tbody id="leaders"></tbody>
+        </table></div>
+      </section>
+    </div>
+    <p class="caption mt-24 center">Trading carries risk of loss. Demo data. NECTRA will never ask for your seed phrase.</p>
+  </main>
+
+  <script src="assets/js/data.js"></script>
+  <script src="assets/js/api.js"></script>
+  <script src="assets/js/core.js"></script>
+  <script src="assets/js/charts.js"></script>
+  <script src="assets/js/copilot.js"></script>
+  <script src="assets/js/pages.js"></script>
+</body>
+</html>

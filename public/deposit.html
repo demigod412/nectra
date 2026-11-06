@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Deposit · NECTRA</title>
+  <meta name="description" content="Deposit crypto to your own NECTRA main wallet.">
+  <meta name="theme-color" content="#0A0A0C">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <script>try{var t=localStorage.getItem('nx-theme');if(t)document.documentElement.dataset.theme=JSON.parse(t)}catch(e){}</script>
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="assets/css/nectra.css">
+</head>
+<body class="app" data-page="deposit">
+  <a class="skip" href="#main">Skip to content</a>
+  <main id="main" class="page" style="max-width:980px">
+    <div class="page__head">
+      <div><h1 class="page__title">Deposit</h1><p class="page__sub">Send crypto to your own main wallet. NECTRA never takes custody.</p></div>
+      <a class="btn btn--ghost" href="wallets.html"><i data-i="arrow-left"></i> Wallets</a>
+    </div>
+
+    <div class="grid stagger">
+      <section class="card span-5 stack-lg" aria-label="Choose network and token">
+        <div>
+          <h2 class="label" style="margin-bottom:10px">1 · Network <span class="help" tabindex="0" data-tip="The blockchain the transfer travels on. Sender and receiver must use the same network." data-tip-pos="left">?</span></h2>
+          <div class="chips" id="dep-chain" role="group" aria-label="Network">
+            <button class="chip" data-c="Solana">Solana</button><button class="chip" data-c="Ethereum">Ethereum</button><button class="chip" data-c="Base">Base</button><button class="chip" data-c="Arbitrum">Arbitrum</button><button class="chip" data-c="BSC">BSC</button>
+          </div>
+        </div>
+        <div>
+          <h2 class="label" style="margin-bottom:10px">2 · Token</h2>
+          <div class="chips" id="dep-token" role="group" aria-label="Token"></div>
+        </div>
+        <div class="note note--warn" id="dep-warning" role="alert"></div>
+        <div class="review">
+          <div class="review__row"><span>Network</span><span>Solana</span></div>
+          <div class="review__row"><span>Token</span><span id="dep-token-label">SOL</span></div>
+          <div class="review__row"><span>Minimum</span><span class="mono">0.0001</span></div>
+          <div class="review__row"><span>Fee</span><span>Paid by sender’s network</span></div>
+        </div>
+      </section>
+
+      <section class="card span-7 stack-lg" aria-labelledby="dep-title">
+        <h2 class="card__title" id="dep-title">3 · Send to your main wallet</h2>
+        <div class="row" style="gap:20px;align-items:flex-start">
+          <div class="qr" id="dep-qr"></div>
+          <div class="stack grow" style="min-width:200px">
+            <span class="label">Deposit address</span>
+            <div id="dep-addr" style="padding:12px 14px;border-radius:12px;background:var(--bg-raised);border:1px solid var(--border)"></div>
+            <button class="btn btn--accent" id="dep-copy" data-copy="" data-copy-msg="Deposit address copied"><span class="ic-copy" style="display:contents"><i data-i="copy"></i></span> Copy address</button>
+            <span class="caption">Double-check the first and last 4 characters after pasting.</span>
+          </div>
+        </div>
+
+        <div class="waiting" id="dep-wait" aria-live="polite">
+          <span class="waiting__pulse" aria-hidden="true"></span>
+          <div class="grow" id="dep-wait-text"></div>
+        </div>
+        <div class="stack-sm" id="dep-conf" hidden>
+          <div class="row between small"><span class="muted">Confirmations <span class="help" tabindex="0" data-tip="Each new block on top of your transaction makes it more final. Funds unlock after the required count.">?</span></span><span class="mono" id="dep-conf-text">0/32 confirmations</span></div>
+          <div class="progress"><div class="progress__bar" id="dep-conf-bar"></div></div>
+        </div>
+        <div class="row"><button class="btn btn--accent btn--sm" id="dep-check"><i data-i="refresh" class="ic--sm"></i> Check for deposit</button><button class="btn btn--ghost btn--sm" id="dep-simulate"><i data-i="play" class="ic--sm"></i> Simulate deposit (demo mode)</button></div>
+        <div><div class="label" style="margin-bottom:6px">Recent deposits</div><div class="list" id="dep-recent"></div></div>
+      </section>
+    </div>
+    <p class="seed-note mt-24" style="justify-content:center"><i data-i="shield"></i> NECTRA will never ask for your seed phrase.</p>
+  </main>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js" defer></script>
+  <script src="assets/js/data.js"></script>
+  <script src="assets/js/api.js"></script>
+  <script src="assets/js/core.js"></script>
+  <script src="assets/js/charts.js"></script>
+  <script src="assets/js/copilot.js"></script>
+  <script src="assets/js/pages.js"></script>
+</body>
+</html>

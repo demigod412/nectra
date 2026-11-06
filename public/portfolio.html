@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Portfolio & History · NECTRA</title>
+  <meta name="description" content="Token holdings, PnL calendar and full transaction history with CSV export.">
+  <meta name="theme-color" content="#0A0A0C">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <script>try{var t=localStorage.getItem('nx-theme');if(t)document.documentElement.dataset.theme=JSON.parse(t)}catch(e){}</script>
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="assets/css/nectra.css">
+</head>
+<body class="app" data-page="portfolio">
+  <a class="skip" href="#main">Skip to content</a>
+  <main id="main" class="page">
+    <div class="page__head">
+      <div><h1 class="page__title">Portfolio</h1><p class="page__sub">Paper account (free balances + positions held by bots) at live prices.</p></div>
+      <div class="balance balance--md"><span class="balance__value" id="pf-value" data-prefix="$">$0.00</span><span class="balance__unit">USD</span></div>
+    </div>
+
+    <div class="grid stagger">
+      <section class="card" aria-labelledby="tk-title">
+        <div class="card__head"><h2 class="card__title" id="tk-title">Tokens</h2><span class="caption">Tap <i data-i="bell-plus" class="ic--sm" style="display:inline;vertical-align:-3px"></i> to set a price alert</span></div>
+        <div class="table-wrap"><table class="table table--stack">
+          <thead><tr><th>Token</th><th class="r">Price</th><th class="r">24h</th><th class="r">Holdings</th><th class="r">Value</th><th></th></tr></thead>
+          <tbody id="tok-body"></tbody>
+        </table></div>
+      </section>
+
+      <section class="card" aria-labelledby="alt-title">
+        <div class="card__head"><h2 class="card__title" id="alt-title"><i data-i="bell"></i> Price alerts</h2><span class="caption">Checked every few seconds against live prices</span></div>
+        <div class="list" id="alerts-list"></div>
+      </section>
+
+      <section class="card" aria-labelledby="cal-title">
+        <div class="card__head"><div><h2 class="card__title" id="cal-title"><i data-i="calendar"></i> PnL calendar</h2><p class="card__sub" id="cal-summary"></p></div>
+          <div class="cal-legend" aria-hidden="true">Loss <span style="background:rgba(255,92,108,.9)"></span><span style="background:rgba(255,92,108,.35)"></span><span style="background:var(--bg-raised)"></span><span style="background:rgba(61,220,151,.35)"></span><span style="background:rgba(61,220,151,.9)"></span> Profit</div></div>
+        <div id="pnl-cal"></div>
+      </section>
+
+      <section class="card" id="history" aria-labelledby="hi-title">
+        <div class="card__head">
+          <h2 class="card__title" id="hi-title">Transaction history <span class="chip__count" id="hist-count">0</span></h2>
+          <button class="btn btn--sm btn--accent" id="export-btn"><i data-i="download" class="ic--sm"></i> Export CSV</button>
+        </div>
+        <div class="row mb-16">
+          <div class="input-wrap input-wrap--icon grow" style="min-width:200px"><span class="input-wrap__icon"><i data-i="search" class="ic--sm"></i></span><label class="sr-only" for="hist-search">Search history</label><input class="input" id="hist-search" placeholder="Search type, token or signature" style="padding-right:14px"></div>
+          <label class="sr-only" for="hist-range">Date range</label>
+          <select class="select" id="hist-range" style="width:auto"><option value="7">Last 7 days</option><option value="30" selected>Last 30 days</option><option value="90">Last 90 days</option><option value="365">Last year</option></select>
+        </div>
+        <div class="chips chips--scroll mb-16" id="hist-type" role="group" aria-label="Filter by type"></div>
+        <div class="table-wrap"><table class="table table--stack">
+          <thead><tr><th>Date</th><th>Type</th><th>Asset</th><th class="r">Amount</th><th>Status</th><th class="r">Details</th></tr></thead>
+          <tbody id="hist-body"></tbody>
+        </table></div>
+      </section>
+    </div>
+  </main>
+
+  <script src="assets/js/data.js"></script>
+  <script src="assets/js/api.js"></script>
+  <script src="assets/js/core.js"></script>
+  <script src="assets/js/charts.js"></script>
+  <script src="assets/js/copilot.js"></script>
+  <script src="assets/js/pages.js"></script>
+</body>
+</html>

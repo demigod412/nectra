@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Settings & Security · NECTRA</title>
+  <meta name="description" content="Profile, 2FA, sessions, withdrawal whitelist, risk limits and preferences.">
+  <meta name="theme-color" content="#0A0A0C">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <script>try{var t=localStorage.getItem('nx-theme');if(t)document.documentElement.dataset.theme=JSON.parse(t)}catch(e){}</script>
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="assets/css/nectra.css">
+</head>
+<body class="app" data-page="settings">
+  <a class="skip" href="#main">Skip to content</a>
+  <main id="main" class="page" style="max-width:1100px">
+    <div class="page__head"><div><h1 class="page__title">Settings</h1><p class="page__sub">Profile, security, risk limits and preferences.</p></div></div>
+
+    <div class="settings-layout">
+      <div class="settings-nav mb-16" role="tablist" aria-label="Settings sections" aria-orientation="vertical" id="set-nav">
+        <button role="tab" aria-selected="true" aria-controls="set-profile"><i data-i="user"></i> Profile</button>
+        <button role="tab" aria-selected="false" aria-controls="set-security"><i data-i="lock"></i> Security</button>
+        <button role="tab" aria-selected="false" aria-controls="set-kyc"><i data-i="shield"></i> Identity</button>
+        <button role="tab" aria-selected="false" aria-controls="set-risk"><i data-i="target"></i> Risk limits</button>
+        <button role="tab" aria-selected="false" aria-controls="set-prefs"><i data-i="settings"></i> Preferences</button>
+      </div>
+
+      <div>
+        <!-- PROFILE -->
+        <section id="set-profile" role="tabpanel" class="card">
+          <form id="profile-form" class="stack-lg">
+            <div class="row"><span class="avatar" id="pf-avatar" style="width:56px;height:56px;font-size:18px"></span><div><div class="strong" id="pf-display"></div><div class="caption" id="pf-sub"></div></div></div>
+            <div class="form-grid form-grid--2">
+              <div class="field"><label class="label" for="pf-name">Display name</label><input class="input" id="pf-name" maxlength="40" autocomplete="name"></div>
+              <div class="field"><label class="label" for="pf-email">Email</label><input class="input" id="pf-email" type="email" autocomplete="email"></div>
+            </div>
+            <div><button class="btn btn--primary" type="submit">Save profile</button></div>
+          </form>
+          <hr>
+          <form id="pw-form" class="stack-lg">
+            <h3 class="card__title">Change password</h3>
+            <div class="form-grid form-grid--2">
+              <div class="field"><label class="label" for="pw-cur">Current password</label><input class="input" id="pw-cur" type="password" autocomplete="current-password"></div>
+              <div class="field"><label class="label" for="pw-new">New password</label><input class="input" id="pw-new" type="password" autocomplete="new-password" minlength="10"></div>
+            </div>
+            <div><button class="btn" type="submit">Update password</button></div>
+          </form>
+        </section>
+
+        <!-- SECURITY -->
+        <section id="set-security" role="tabpanel" hidden class="stack-lg">
+          <div class="note note--pink"><i data-i="shield"></i><span><strong>NECTRA will never ask for your seed phrase, recovery phrase or private key</strong> — not by email, chat or phone.</span></div>
+          <div class="card">
+            <div class="setting-row"><div class="setting-row__text"><h4>Two-factor authentication <span id="tfa-state"></span></h4><p>Required for withdrawals, new whitelist addresses and going live.</p></div><button class="btn btn--primary" id="tfa-btn">Set up 2FA</button></div>
+            <div class="setting-row"><div class="setting-row__text"><h4>Anti-phishing code <span class="help" tabindex="0" data-tip="A secret phrase we show in every email. If an email doesn’t contain it, don’t trust it.">?</span></h4><p>Shown in every email we send you.</p><div class="phish mt-8"><i data-i="mail" class="ic--sm"></i><span id="phish-code"></span></div></div><button class="btn" id="phish-edit"><i data-i="edit" class="ic--sm"></i> Change</button></div>
+            <div class="setting-row"><div class="setting-row__text"><h4>Whitelist-only withdrawals</h4><p>Only allow withdrawals to whitelisted addresses. New addresses unlock after 24h.</p></div><label class="switch"><input type="checkbox" id="wl-only" checked><span class="switch__track"></span><span class="sr-only">Whitelist-only withdrawals</span></label></div>
+          </div>
+
+          <div class="card">
+            <div class="card__head"><h2 class="card__title">Active sessions</h2><button class="btn btn--sm btn--danger-outline" id="revoke-all">Sign out others</button></div>
+            <div class="list" id="sessions"></div>
+          </div>
+
+          <div class="card">
+            <div class="card__head"><h2 class="card__title">Withdrawal address whitelist</h2></div>
+            <div class="list" id="whitelist"></div>
+            <form id="wl-form" class="form-grid mt-16" novalidate>
+              <div class="form-grid form-grid--2">
+                <div class="field"><label class="label" for="wl-label">Label</label><input class="input" id="wl-label" maxlength="32" placeholder="e.g. Cold storage"></div>
+                <div class="field"><label class="label" for="wl-addr">Solana address</label><input class="input mono" id="wl-addr" spellcheck="false" autocomplete="off" placeholder="Public address"><span class="hint hint--error" id="wl-hint" hidden>Not a valid Solana address</span></div>
+              </div>
+              <div><button class="btn btn--accent" type="submit"><i data-i="plus"></i> Add to whitelist</button></div>
+            </form>
+          </div>
+        </section>
+
+        <!-- RISK LIMITS -->
+        <!-- IDENTITY / KYC -->
+        <section id="set-kyc" role="tabpanel" hidden class="card stack-lg">
+          <div class="card__head"><h2 class="card__title"><i data-i="shield"></i> Identity verification (KYC)</h2><span id="kyc-badge"></span></div>
+          <p class="small muted" id="kyc-intro">Verifying your identity is required before you can apply for a loan. We store only your name, country, date of birth, ID type and the last 4 digits of your ID.</p>
+          <div id="kyc-view"></div>
+          <form id="kyc-form" class="form-grid" novalidate hidden>
+            <div class="field"><label class="label" for="kyc-name">Full legal name</label><input class="input" id="kyc-name" maxlength="120" autocomplete="name"></div>
+            <div class="field"><label class="label" for="kyc-country">Country</label><input class="input" id="kyc-country" maxlength="56" autocomplete="country-name"></div>
+            <div class="field"><label class="label" for="kyc-dob">Date of birth</label><input class="input" id="kyc-dob" type="date"></div>
+            <div class="field"><label class="label" for="kyc-idtype">ID type</label><select class="select" id="kyc-idtype"><option value="">Select…</option><option>Passport</option><option>National ID</option><option>Driver’s licence</option></select></div>
+            <div class="field"><label class="label" for="kyc-idnum">ID number</label><input class="input mono" id="kyc-idnum" maxlength="40" autocomplete="off" spellcheck="false"><span class="hint">Only the last 4 digits are stored.</span></div>
+            <div class="field field--full"><label class="label" for="kyc-address">Residential address</label><input class="input" id="kyc-address" maxlength="200" autocomplete="street-address"></div>
+            <div class="field"><label class="label" for="kyc-front">Government ID — front <span class="req">*</span></label><input class="input" id="kyc-front" type="file" accept="image/*"><span class="hint">Clear photo of a passport, national ID or driver’s licence.</span><div class="kyc-preview" id="kyc-front-prev" hidden></div></div>
+            <div class="field"><label class="label" for="kyc-back">Government ID — back <span class="caption">(if applicable)</span></label><input class="input" id="kyc-back" type="file" accept="image/*"><div class="kyc-preview" id="kyc-back-prev" hidden></div></div>
+            <div class="field field--full"><p class="caption"><i data-i="lock" class="ic--sm"></i> Your ID is stored securely and only visible to NECTRA reviewers. It’s used solely to verify your identity.</p></div>
+            <div class="field field--full"><button class="btn btn--primary" id="kyc-submit" type="submit"><i data-i="check" class="ic--sm"></i> Submit for review</button></div>
+          </form>
+        </section>
+
+        <section id="set-risk" role="tabpanel" hidden class="card stack-lg">
+          <div class="note note--warn"><i data-i="alert"></i><span>Limits are enforced by the trading engine for every bot. When a limit is hit, bots pause — open positions are not sold automatically.</span></div>
+          <div class="field"><label class="label" for="risk-loss">Max daily loss <b class="mono" id="risk-loss-v" style="color:var(--text)"></b></label><input type="range" class="range" id="risk-loss" min="1" max="25" value="5"><span class="hint">Of total portfolio value. All bots pause when reached.</span></div>
+          <div class="field"><label class="label" for="risk-pos">Max position size <b class="mono" id="risk-pos-v" style="color:var(--text)"></b></label><input type="range" class="range" id="risk-pos" min="100" max="25000" step="100" value="12500"><span class="hint">Largest open exposure across all bots.</span></div>
+          <div class="field"><label class="label" for="risk-bots">Max concurrent bots <b class="mono" id="risk-bots-v" style="color:var(--text)"></b></label><input type="range" class="range" id="risk-bots" min="1" max="20" value="6"></div>
+          <label class="switch"><input type="checkbox" id="risk-live" checked><span class="switch__track"></span><span class="small">Require confirmation before any bot goes live</span></label>
+          <div class="note note--pink"><i data-i="shield"></i><span id="risk-guard"></span></div>
+          <div><button class="btn btn--primary" id="risk-save">Save limits</button></div>
+        </section>
+
+        <!-- PREFERENCES -->
+        <section id="set-prefs" role="tabpanel" hidden class="card">
+          <div class="setting-row"><div class="setting-row__text"><h4>Theme</h4><p>Dark is the default.</p></div>
+            <div class="row" style="gap:8px"><button class="option-card" style="width:auto" data-theme-set="dark"><i data-i="moon"></i> Dark</button><button class="option-card" style="width:auto" data-theme-set="light"><i data-i="sun"></i> Light</button></div></div>
+          <div class="setting-row"><div class="setting-row__text"><h4>Language</h4></div><label class="sr-only" for="lang">Language</label><select class="select" id="lang" style="width:auto;min-width:180px"><option>English</option><option>Español</option><option>Português</option><option>Français</option><option>Deutsch</option><option>日本語</option></select></div>
+          <div class="setting-row"><div class="setting-row__text"><h4>Display currency</h4></div><div class="chips" id="ccy" role="group" aria-label="Currency"><button class="chip" data-ccy="USD" aria-pressed="true">USD</button><button class="chip" data-ccy="EUR" aria-pressed="false">EUR</button><button class="chip" data-ccy="SOL" aria-pressed="false">SOL</button></div></div>
+          <div class="setting-row"><div class="setting-row__text"><h4>Email notifications</h4><p>Security alerts are always on.</p></div><label class="switch"><input type="checkbox" id="pref-email" checked><span class="switch__track"></span><span class="sr-only">Email notifications</span></label></div>
+          <div class="setting-row"><div class="setting-row__text"><h4>Push on this device <span id="push-state"></span></h4><p>Real notifications for loan reminders, bot events and price alerts — even when NECTRA is closed. On iPhone, add NECTRA to your Home Screen first.</p></div><button class="btn" id="push-btn">Enable</button></div>
+          <div class="setting-row"><div class="setting-row__text"><h4>Push notifications</h4><p>Bot events and price alerts.</p></div><label class="switch"><input type="checkbox" id="pref-push" checked><span class="switch__track"></span><span class="sr-only">Push notifications</span></label></div>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <!-- 2FA setup -->
+  <dialog class="modal" id="tfa-modal" aria-labelledby="tfa-title">
+    <div class="modal__head"><h2 class="modal__title" id="tfa-title">Set up two-factor authentication</h2><button class="icon-btn icon-btn--sm" data-close aria-label="Close"><i data-i="x"></i></button></div>
+    <div class="modal__body">
+      <p class="small muted">1. Scan with an authenticator app (Google Authenticator, Authy, 1Password…).</p>
+      <div class="qr" id="tfa-qr" style="margin:0 auto"></div>
+      <p class="small muted center">Or enter this key manually: <b class="mono" style="color:var(--text);overflow-wrap:anywhere" id="tfa-secret"></b> <button class="copy-btn" id="tfa-copy" data-copy="" data-copy-msg="Setup key copied" aria-label="Copy setup key"><i data-i="copy" class="ic-copy"></i><i data-i="check" class="ic-check"></i></button></p>
+      <p class="small muted">2. Enter the 6-digit code it shows.</p>
+      <div class="otp" id="tfa-otp2" role="group" aria-label="Authenticator code"></div>
+      <p class="hint hint--error" id="tfa-err" style="justify-content:center"></p>
+    </div>
+  </dialog>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js" defer></script>
+  <script src="assets/js/data.js"></script>
+  <script src="assets/js/api.js"></script>
+  <script src="assets/js/core.js"></script>
+  <script src="assets/js/charts.js"></script>
+  <script src="assets/js/copilot.js"></script>
+  <script src="assets/js/pages.js"></script>
+</body>
+</html>

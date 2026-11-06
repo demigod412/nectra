@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Withdraw · NECTRA</title>
+  <meta name="description" content="Withdraw from your wallets with review, verification and wallet signing.">
+  <meta name="theme-color" content="#0A0A0C">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <script>try{var t=localStorage.getItem('nx-theme');if(t)document.documentElement.dataset.theme=JSON.parse(t)}catch(e){}</script>
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="assets/css/nectra.css">
+</head>
+<body class="app" data-page="withdraw">
+  <a class="skip" href="#main">Skip to content</a>
+  <main id="main" class="page" style="max-width:640px">
+    <div class="page__head">
+      <div><h1 class="page__title">Withdraw</h1><p class="page__sub">Wallet withdrawals are signed in your own wallet. Account-balance payouts are sent by our team.</p></div>
+    </div>
+
+    <section class="card" aria-live="polite">
+      <div class="wizard-steps" id="wd-steps" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+
+      <!-- 1. Form -->
+      <div class="step" id="wd-edit">
+        <form id="wd-form" class="stack-lg" novalidate>
+          <div class="field"><label class="label" for="wd-from">From</label><select class="select" id="wd-from"></select></div>
+          <div class="field"><label class="label" for="wd-token">Token</label><select class="select" id="wd-token"><option>SOL — Solana</option></select></div>
+          <div class="field">
+            <label class="label" for="wd-to">To address <span class="help" tabindex="0" data-tip="We validate the address format and checksum. Whitelisted addresses skip the 24h security hold." data-tip-pos="left">?</span></label>
+            <div class="input-wrap"><input class="input mono" id="wd-to" autocomplete="off" spellcheck="false" placeholder="Recipient Solana address">
+              <div class="input-wrap__end">
+                <button class="btn btn--sm btn--ghost" type="button" id="wd-paste">Paste</button>
+                <div class="menu-anchor"><button class="icon-btn icon-btn--sm" type="button" data-menu-btn aria-haspopup="menu" aria-expanded="false" aria-label="Address book"><i data-i="book"></i></button><div class="menu" role="menu" id="wd-book-menu" style="min-width:280px"></div></div>
+              </div></div>
+            <span class="hint" id="wd-to-hint">Solana address (base58, 32–44 characters)</span>
+          </div>
+          <div class="field">
+            <label class="label" for="wd-amount">Amount <span class="caption">Available: <b class="mono" id="wd-avail">–</b></span></label>
+            <div class="input-wrap"><input class="input mono" id="wd-amount" inputmode="decimal" placeholder="0.00" autocomplete="off"><div class="input-wrap__end"><span class="input-unit wd-unit">SOL</span><button class="btn btn--sm btn--accent" type="button" id="wd-max">MAX</button></div></div>
+            <span class="hint" id="wd-amt-hint">≈ $0.00</span>
+            <input type="range" class="range" id="wd-range" min="0" max="100" value="0" aria-label="Percentage of balance">
+            <div class="range-marks" id="wd-marks"><button type="button" data-p="25">25%</button><button type="button" data-p="50">50%</button><button type="button" data-p="75">75%</button><button type="button" data-p="100">100%</button></div>
+          </div>
+          <div class="row"><span class="fee-chip" id="wd-fee"></span></div>
+          <button class="btn btn--primary btn--lg btn--block" id="wd-continue" disabled>Review withdrawal</button>
+        </form>
+      </div>
+
+      <!-- 2. Review -->
+      <div class="step" id="wd-review">
+        <h2 class="card__title mb-16">Review withdrawal</h2>
+        <div class="review" id="wd-review-list"></div>
+        <div class="note note--warn mt-16"><i data-i="alert"></i><span>Blockchain transfers are <strong>irreversible</strong>. Make sure the address is correct and on the Solana network.</span></div>
+        <div class="row mt-16"><button class="btn grow" id="wd-back"><i data-i="arrow-left"></i> Edit</button><button class="btn btn--primary grow" id="wd-confirm">Confirm</button></div>
+      </div>
+
+      <!-- 3. Code -->
+      <div class="step" id="wd-code">
+        <h2 class="card__title">Security check</h2>
+        <p class="muted small mt-8 mb-16" id="wd-code-help"></p>
+        <div class="otp" id="wd-otp" role="group" aria-label="Verification code"></div>
+        <div class="otp__status" id="wd-otp-status" aria-live="polite"></div>
+        
+      </div>
+
+      <!-- 4. Sign in wallet -->
+      <div class="step" id="wd-sign">
+        <div class="connecting"><div class="orbit"><span data-logo="40" class="logo--spin"></span></div>
+          <div><div class="strong">Confirm in your wallet</div><div class="caption">Your wallet will show the exact amount and destination. Approve it there.</div></div></div>
+      </div>
+
+      <!-- 5. Success -->
+      <div class="step center" id="wd-success">
+        <div class="success-mark"><i data-i="check"></i></div>
+        <h2 class="card__title" style="justify-content:center" id="wd-success-title">Withdrawal sent</h2>
+        <p class="muted mt-8"><b class="mono" id="wd-success-amt"></b> — <span id="wd-success-msg"></span></p>
+        <div class="row mt-16" style="justify-content:center" id="wd-sig-row"><span class="caption">Signature</span><span id="wd-sig"></span></div>
+        <div class="row mt-16"><a class="btn grow" id="wd-explorer" href="#" target="_blank" rel="noopener">View on explorer <i data-i="external" class="ic--sm"></i></a><a class="btn btn--primary grow" href="wallets.html">Done</a></div>
+        
+      </div>
+    </section>
+    <p class="seed-note mt-24" style="justify-content:center"><i data-i="shield"></i> NECTRA will never ask for your seed phrase.</p>
+  </main>
+
+  <script src="assets/js/data.js"></script>
+  <script src="assets/js/api.js"></script>
+  <script src="assets/js/core.js"></script>
+  <script src="assets/js/charts.js"></script>
+  <script src="assets/js/copilot.js"></script>
+  <script src="assets/js/pages.js"></script>
+</body>
+</html>

@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Referrals · NECTRA</title>
+  <meta name="description" content="Share invite codes and unlock reward tiers.">
+  <meta name="theme-color" content="#0A0A0C">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <script>try{var t=localStorage.getItem('nx-theme');if(t)document.documentElement.dataset.theme=JSON.parse(t)}catch(e){}</script>
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="assets/css/nectra.css">
+</head>
+<body class="app" data-page="referrals">
+  <a class="skip" href="#main">Skip to content</a>
+  <main id="main" class="page">
+    <div class="page__head">
+      <div><h1 class="page__title">Referrals</h1><p class="page__sub">Invite friends to the beta. Every signup moves you up a tier.</p></div>
+      <div class="page__actions"><button class="btn btn--primary" id="gen-code"><i data-i="plus"></i> Generate code</button></div>
+    </div>
+    <div class="grid stagger">
+      <section class="card span-7" aria-labelledby="rc-title">
+        <div class="card__head"><h2 class="card__title" id="rc-title"><i data-i="gift"></i> Your invite codes</h2><span class="caption"><b class="mono" id="ref-total">0</b> friends joined</span></div>
+        <div class="list" id="ref-codes"></div>
+        <p class="caption mt-12">Each code works 5 times. Up to 5 active codes.</p>
+      </section>
+      <section class="card span-5 stack-lg" aria-labelledby="tr-title">
+        <h2 class="card__title" id="tr-title">Reward tier</h2>
+        <div id="ref-ring" style="margin:0 auto"></div>
+        <div class="stack" id="tiers"></div>
+      </section>
+    </div>
+  </main>
+  <script src="assets/js/data.js"></script>
+  <script src="assets/js/api.js"></script>
+  <script src="assets/js/core.js"></script>
+  <script src="assets/js/charts.js"></script>
+  <script src="assets/js/copilot.js"></script>
+  <script src="assets/js/pages.js"></script>
+</body>
+</html>

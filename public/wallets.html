@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Wallets · NECTRA</title>
+  <meta name="description" content="Manage your main and trading wallets — non-custodial.">
+  <meta name="theme-color" content="#0A0A0C">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <script>try{var t=localStorage.getItem('nx-theme');if(t)document.documentElement.dataset.theme=JSON.parse(t)}catch(e){}</script>
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="assets/css/nectra.css">
+</head>
+<body class="app" data-page="wallets">
+  <a class="skip" href="#main">Skip to content</a>
+  <main id="main" class="page">
+    <!-- Header: "Wallets (?)  $0.27 · 0.0028 SOL · 18 wallets" -->
+    <div class="page__head">
+      <div>
+        <h1 class="page__title">Wallets <span class="help" tabindex="0" data-tip="Your main wallet receives deposits. Buyer / trading wallets are used by bots. NECTRA only stores public addresses — you sign every transaction." data-tip-pos="right">?</span></h1>
+        <p class="page__sub mono"><b id="w-total-usd" class="mono" style="color:var(--text)">$0.00</b> · <span id="w-total-sol">0.0000</span> SOL · <span id="w-count">18</span> wallets</p>
+      </div>
+      <div class="page__actions">
+        <a class="btn" href="deposit.html"><i data-i="deposit"></i> Deposit</a>
+        <a class="btn" href="withdraw.html"><i data-i="withdraw"></i> Withdraw</a>
+        <div class="menu-anchor">
+          <button class="btn btn--accent" data-menu-btn aria-haspopup="menu" aria-expanded="false"><i data-i="plus"></i> Add wallets <i data-i="chevron-down" class="ic--sm"></i></button>
+          <div class="menu" role="menu">
+            <button class="menu__item" role="menuitem" id="add-connect"><i data-i="link"></i><span>Connect wallet<small>Phantom, MetaMask & more</small></span></button>
+            <button class="menu__item" role="menuitem" id="add-gen"><i data-i="plus"></i><span>Generate new<small>Keys stay on your device</small></span></button>
+            <button class="menu__item" role="menuitem" id="add-watch"><i data-i="eye"></i><span>Import watch-only address<small>Track any public address</small></span></button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid stagger">
+      <!-- Main wallet -->
+      <section class="card card--glow" aria-labelledby="mw-title">
+        <div id="mw-empty" hidden>
+          <div class="empty" style="padding:16px"><h3>No main wallet yet</h3><p>Connect Phantom, Solflare or Backpack and sign a message to prove you own it. Deposits go straight to this wallet.</p><button class="btn btn--primary" id="mw-connect"><i data-i="link"></i> Connect wallet</button></div>
+        </div>
+        <div class="main-wallet" id="mw-body">
+          <div class="stack">
+            <div class="row between"><h2 class="card__title" id="mw-title"><i data-i="wallet"></i> Main wallet <span class="tag tag--pink">Solana</span></h2></div>
+            <div id="main-addr"></div>
+            <div class="balance"><span class="balance__value" id="main-bal">0.0000</span><span class="balance__unit">SOL</span><span class="caption mono" id="main-usd"></span></div>
+            <p class="caption">Deposit by sending SOL to this address from any wallet or exchange.</p>
+          </div>
+          <div class="row" style="align-self:end">
+            <button class="btn" id="refresh-btn"><i data-i="refresh"></i> Refresh</button>
+            <button class="btn btn--ghost" id="change-main">Change main wallet…</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Account balance (platform ledger: approved loans are credited here) -->
+      <section class="card" aria-labelledby="ab-title">
+        <div class="row between">
+          <div class="stack-sm"><h2 class="card__title" id="ab-title"><i data-i="landmark"></i> Account balance <span class="help" tabindex="0" data-tip="USDC held for you by NECTRA. Approved loans are credited here. Withdraw any time; payouts are sent by our team.">?</span></h2>
+            <div class="balance balance--md"><span class="balance__value" id="acct-bal">$0.00</span><span class="balance__unit">USDC</span></div></div>
+          <div class="row"><a class="btn" href="loans.html">Loans</a><a class="btn btn--accent" href="withdraw.html">Withdraw</a></div>
+        </div>
+      </section>
+
+      <!-- Buyer / trading wallets -->
+      <section class="card" aria-labelledby="bw-title">
+        <div class="card__head">
+          <h2 class="card__title" id="bw-title">Buyer wallets (<span id="buyer-count">17</span>)</h2>
+          <span class="caption" id="buyer-total"></span>
+        </div>
+        <div class="chips chips--scroll mb-16" id="folder-chips" role="group" aria-label="Folders"></div>
+        <div class="row between" style="padding:0 12px 8px;border-bottom:1px solid var(--border)">
+          <label class="check"><input type="checkbox" id="select-all"><span class="check__box"></span><span class="small muted">Select all</span></label>
+          <span class="caption">Balance</span>
+        </div>
+        <div class="list" id="buyer-list"></div>
+      </section>
+    </div>
+    <p class="seed-note mt-24" style="justify-content:center"><i data-i="shield"></i> NECTRA will never ask for your seed phrase or private key.</p>
+  </main>
+
+  <!-- Bulk actions bar (slides up when rows are selected) -->
+  <div class="bulkbar" id="bulkbar" role="region" aria-label="Bulk actions">
+    <span class="bulkbar__count" id="bulk-count">0 selected</span>
+    <button class="btn btn--sm btn--accent" data-bulk="fund"><i data-i="deposit" class="ic--sm"></i> Fund</button>
+    <button class="btn btn--sm" data-bulk="sweep"><i data-i="withdraw" class="ic--sm"></i> Sweep</button>
+    <button class="btn btn--sm" data-bulk="move"><i data-i="folder" class="ic--sm"></i> Move</button>
+    <button class="icon-btn icon-btn--sm" data-bulk="clear" aria-label="Clear selection"><i data-i="x"></i></button>
+  </div>
+
+  <!-- Connect wallet modal -->
+  <dialog class="modal" id="connect-modal" aria-labelledby="cm-title">
+    <div class="modal__head"><h2 class="modal__title" id="cm-title">Connect a wallet</h2><button class="icon-btn icon-btn--sm" data-close aria-label="Close"><i data-i="x"></i></button></div>
+    <div class="modal__body">
+      <div><div class="label mb-16" style="margin-bottom:8px">Network</div>
+        <div class="chips" id="chain-chips" role="group" aria-label="Network">
+          <button class="chip" data-chain="Solana" aria-pressed="true">Solana</button><button class="chip" data-chain="Ethereum" aria-pressed="false">Ethereum</button><button class="chip" data-chain="Base" aria-pressed="false">Base</button><button class="chip" data-chain="Arbitrum" aria-pressed="false">Arbitrum</button><button class="chip" data-chain="BSC" aria-pressed="false">BSC</button>
+        </div></div>
+      <div id="connect-body"></div>
+      <p class="seed-note"><i data-i="shield"></i> Connecting shares only your public address. NECTRA will never ask for your seed phrase.</p>
+    </div>
+  </dialog>
+
+  <!-- Watch-only import modal -->
+  <dialog class="modal" id="watch-modal" aria-labelledby="wm-title">
+    <div class="modal__head"><h2 class="modal__title" id="wm-title">Import watch-only address</h2><button class="icon-btn icon-btn--sm" data-close aria-label="Close"><i data-i="x"></i></button></div>
+    <div class="modal__body">
+      <div class="field"><label class="label" for="watch-input">Public address</label><input class="input mono" id="watch-input" autocomplete="off" spellcheck="false" placeholder="Solana or 0x… address"><span class="hint" id="watch-hint">Paste a public address. Watch-only wallets can’t trade.</span></div>
+      <div class="field"><label class="label" for="watch-name">Label <span class="faint">optional</span></label><input class="input" id="watch-name" maxlength="32" placeholder="e.g. Cold storage"></div>
+      <div class="note note--pink"><i data-i="shield"></i><span><strong>Never paste a seed phrase or private key.</strong> NECTRA will never ask for them.</span></div>
+    </div>
+    <div class="modal__foot"><button class="btn" data-close>Cancel</button><button class="btn btn--primary" id="watch-add">Add address</button></div>
+  </dialog>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js" defer></script>
+  <script src="assets/js/data.js"></script>
+  <script src="assets/js/api.js"></script>
+  <script src="assets/js/core.js"></script>
+  <script src="assets/js/charts.js"></script>
+  <script src="assets/js/copilot.js"></script>
+  <script src="assets/js/pages.js"></script>
+</body>
+</html>

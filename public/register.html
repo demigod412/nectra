@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Join NECTRA · Invite-only registration</title>
+  <meta name="description" content="Create your NECTRA account with an invite code, or request an invite.">
+  <meta name="theme-color" content="#0A0A0C">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <script>try{var t=localStorage.getItem('nx-theme');if(t)document.documentElement.dataset.theme=JSON.parse(t)}catch(e){}</script>
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="assets/css/nectra.css">
+</head>
+<body data-page="register">
+  <div class="aurora" aria-hidden="true"></div>
+  <div class="auth">
+    <header class="pubnav"><div class="container pubnav__in">
+      <a class="brand" href="index.html" aria-label="NECTRA home"><span data-logo="30"></span><span class="brand__name">NECTRA</span></a>
+      <a class="btn btn--ghost btn--sm" href="login.html">Log in</a>
+    </div></header>
+
+    <main id="main" class="auth__main">
+      <section class="card auth__card" aria-live="polite">
+        <div class="auth__progress" id="auth-progress"><span style="width:25%"></span></div>
+        <div class="auth__steps" aria-hidden="true"><span data-s="1">Invite</span><span data-s="2">Account</span><span data-s="3">Verify</span><span data-s="4">Wallets</span></div>
+
+        <!-- STEP 1 — Invite code (segmented, auto-advance, paste) -->
+        <div class="step" id="step-invite">
+          <h1 class="auth__title">Enter your invite code</h1>
+          <p class="auth__lead">NECTRA is invite-only during beta. Codes are 6–8 characters — paste works too.</p>
+          <div class="otp" id="invite-otp" role="group" aria-label="Invite code"></div>
+          <div class="otp__status" id="invite-status" aria-live="polite"></div>
+          <button class="btn btn--primary btn--block btn--lg mt-16" id="invite-next" disabled>Continue</button>
+          <p class="caption center mt-16">No code? <a class="link" href="#request">Request an invite</a> · <button class="link" id="invite-demo" type="button">Use demo code</button></p>
+        </div>
+
+        <!-- STEP 2 — Account -->
+        <div class="step" id="step-account">
+          <h1 class="auth__title">Create your account</h1>
+          <p class="auth__lead">Use email and a strong password, or prove ownership of a wallet.</p>
+          <button class="btn btn--block btn--lg" id="reg-wallet" type="button"><i data-i="wallet"></i> Continue with wallet</button>
+          <div class="divider">or with email</div>
+          <form id="account-form" class="stack" novalidate>
+            <div class="field"><label class="label" for="reg-email">Email</label><input class="input" id="reg-email" type="email" autocomplete="email" placeholder="you@example.com" required><span class="hint hint--error" id="reg-email-hint" hidden>Enter a valid email address</span></div>
+            <div class="field"><label class="label" for="reg-pw">Password</label><input class="input" id="reg-pw" type="password" autocomplete="new-password" minlength="10" placeholder="10+ characters" required>
+              <div class="pw-meter" id="pw-meter" aria-hidden="true"><span></span><span></span><span></span><span></span></div><span class="hint" id="pw-hint" aria-live="polite">Use 10+ characters with a mix of cases, numbers &amp; symbols</span></div>
+            <label class="check"><input type="checkbox" id="reg-terms"><span class="check__box"></span><span class="small">I agree to the <a class="link" href="#">Terms</a> and understand that trading carries <a class="link" href="#">risk of loss</a>.</span></label>
+            <button class="btn btn--primary btn--block btn--lg" type="submit">Create account</button>
+          </form>
+          <p class="seed-note mt-16"><i data-i="shield"></i> NECTRA will never ask for your seed phrase.</p>
+        </div>
+
+        <!-- STEP 3 — Email verification -->
+        <div class="step" id="step-verify">
+          <h1 class="auth__title">Check your inbox</h1>
+          <p class="auth__lead">We sent a 6-digit code to <b id="verify-email-label">your email</b>. It expires in 10 minutes.</p>
+          <div class="otp" id="verify-otp" role="group" aria-label="Verification code"></div>
+          <div class="otp__status" id="verify-status" aria-live="polite"></div>
+          <div class="center mt-8" id="verify-dev"></div>
+          <div class="row between mt-16"><button class="btn btn--ghost btn--sm" id="verify-back" type="button"><i data-i="arrow-left"></i> Change email</button><button class="btn btn--sm" id="resend" type="button" disabled>Resend in 30s</button></div>
+          <div class="note mt-16"><i data-i="mail"></i><span>Our emails always show your <strong>anti-phishing code</strong> (you’ll set it in Settings). In demo mode the code is also shown here and in Admin → Mailbox.</span></div>
+        </div>
+
+        <!-- STEP 4 — Link public wallets (optional) -->
+        <div class="step" id="step-wallets">
+          <h1 class="auth__title">Link your wallets <span class="tag">Optional</span></h1>
+          <p class="auth__lead">Add one or more <b>public</b> addresses to track balances and run bots. You can do this later.</p>
+          <div class="field">
+            <label class="label" for="link-input">Public wallet address <span class="help" tabindex="0" data-tip="A public address is safe to share — it’s like an account number. Never share a seed phrase or private key." data-tip-pos="left">?</span></label>
+            <div class="input-wrap"><input class="input mono" id="link-input" autocomplete="off" spellcheck="false" placeholder="e.g. 4d5E…jvta"><div class="input-wrap__end"><button class="btn btn--sm btn--accent" id="link-add" type="button">Add</button></div></div>
+            <span class="hint" id="link-hint">Solana or EVM public address</span>
+            <button class="link small" id="link-sample" type="button" style="align-self:flex-start">Paste a sample address</button>
+          </div>
+          <div class="list mt-12" id="link-list"></div>
+          <div class="note note--pink mt-16"><i data-i="shield"></i><span><strong>NECTRA will never ask for your seed phrase</strong> or private key. Only paste public addresses here.</span></div>
+          <div class="row mt-16"><button class="btn btn--ghost grow" id="link-skip" type="button">Skip for now</button><button class="btn btn--primary grow" id="link-finish" type="button">Finish</button></div>
+        </div>
+
+        <!-- DONE -->
+        <div class="step center" id="step-done">
+          <div class="success-mark"><i data-i="check"></i></div>
+          <h1 class="auth__title">Welcome to NECTRA</h1>
+          <p class="auth__lead">Your account is ready. Bots start in <b>paper trading</b> — no real funds until you say so.</p>
+          <a class="btn btn--primary btn--block btn--lg" href="dashboard.html">Open dashboard <i data-i="arrow-right"></i></a>
+        </div>
+
+        <!-- REQUEST AN INVITE -->
+        <div class="step" id="step-request">
+          <h1 class="auth__title">Request an invite</h1>
+          <p class="auth__lead">Join the waitlist. We send invites in small batches every week.</p>
+          <form id="request-form" class="stack" novalidate>
+            <div class="field"><label class="label" for="req-email">Email</label><input class="input" id="req-email" type="email" autocomplete="email" placeholder="you@example.com" required></div>
+            <div class="field"><label class="label" for="req-ref">Referral handle <span class="faint">optional</span></label><div class="input-wrap input-wrap--icon"><span class="input-wrap__icon">@</span><input class="input" id="req-ref" placeholder="who sent you?" autocomplete="off"></div></div>
+            <button class="btn btn--primary btn--block btn--lg" type="submit">Join the waitlist</button>
+          </form>
+          <p class="caption center mt-16">Already have a code? <a class="link" href="register.html">Enter it here</a></p>
+        </div>
+        <div class="step center" id="step-request-done">
+          <div class="success-mark"><i data-i="check"></i></div>
+          <h1 class="auth__title">You’re on the list</h1>
+          <p class="auth__lead">Your position: <b class="mono pink" id="wl-pos">#2,481</b>. We’ll email your invite code — look for your anti-phishing code once you’re in.</p>
+          <a class="btn btn--block" href="index.html">Back to home</a>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="assets/js/data.js"></script>
+  <script src="assets/js/api.js"></script>
+  <script src="assets/js/core.js"></script>
+  <script src="assets/js/charts.js"></script>
+  <script src="assets/js/pages.js"></script>
+</body>
+</html>

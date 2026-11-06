@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>NECTRA — Your AI trading agent that never sleeps</title>
+  <meta name="description" content="NECTRA is an invite-only, non-custodial AI trading agent for crypto. Describe a strategy in plain English, review it, and let it run.">
+  <meta name="theme-color" content="#0A0A0C">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <script>try{var t=localStorage.getItem('nx-theme');if(t)document.documentElement.dataset.theme=JSON.parse(t)}catch(e){}</script>
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="assets/css/nectra.css">
+</head>
+<body data-page="landing">
+  <a class="skip" href="#main">Skip to content</a>
+
+  <!-- ===== Public navigation ===== -->
+  <header class="pubnav">
+    <div class="container pubnav__in">
+      <a class="brand" href="index.html" aria-label="NECTRA home"><span data-logo="30"></span><span class="brand__name">NECTRA</span></a>
+      <nav class="pubnav__links" aria-label="Sections">
+        <a href="#features">Features</a><a href="#how">How it works</a><a href="#safety">Safety</a><a href="#faq">FAQ</a>
+      </nav>
+      <div class="pubnav__cta">
+        <a class="btn btn--ghost btn--sm" href="login.html">Log in</a>
+        <a class="btn btn--primary btn--sm" href="register.html#request">Request invite</a>
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+    <!-- ===== Hero ===== -->
+    <section class="hero">
+      <div class="aurora" aria-hidden="true"></div>
+      <div class="container hero__grid">
+        <div>
+          <span data-logo="84" class="hero__logo logo--breathe"></span>
+          <div class="mt-24"><span class="hero__eyebrow"><span class="tag tag--pink">Invite beta</span> Non-custodial · AI strategies · Solana & EVM</span></div>
+          <h1>Your AI trading agent <em>that never sleeps.</em></h1>
+          <p class="hero__lead">Describe a strategy in plain English. NECTRA turns it into rules you can read, backtests it, and runs it around the clock — while your funds stay in your own wallet.</p>
+          <div class="hero__ctas">
+            <a class="btn btn--primary btn--lg" href="register.html#request">Request invite <i data-i="arrow-right"></i></a>
+            <a class="btn btn--lg" href="register.html"><i data-i="lock"></i> I have an invite code</a>
+          </div>
+          <div class="hero__trust">
+            <span><i data-i="shield"></i> You sign every transaction</span>
+            <span><i data-i="check"></i> Paper trading by default</span>
+            <span><i data-i="lock"></i> We never ask for your seed phrase</span>
+          </div>
+        </div>
+
+        <!-- live chart mockup -->
+        <div class="mock" aria-label="Demo dashboard preview">
+          <div class="mock__bar" aria-hidden="true"><i></i><i></i><i></i></div>
+          <div class="row between">
+            <div>
+              <div class="caption row" style="gap:6px"><span class="dot dot--pulse"></span> Paper portfolio · live demo</div>
+              <div class="balance mt-8"><span class="balance__value" id="hero-value" data-prefix="$">$0.00</span></div>
+            </div>
+            <span class="tag tag--paper">Paper trading</span>
+          </div>
+          <div id="hero-chart" class="mt-16" style="height:180px"></div>
+          <div class="mock__events" id="hero-events" aria-live="off"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== Features ===== -->
+    <section class="section" id="features">
+      <div class="container">
+        <div class="section__head reveal"><span class="eyebrow">What you get</span><h2>Everything an always-on trader needs.</h2><p>Strategy, execution, wallets, lending and safety rails — in one calm, focused workspace.</p></div>
+        <div class="grid-auto">
+          <article class="card card--hover feature reveal"><div class="feature__ic"><i data-i="sparkles"></i></div><h3>AI strategies</h3><p>Type “DCA $50 into SOL every Monday” and get a strategy card with entry, exit, stop-loss and max position — before anything runs.</p></article>
+          <article class="card card--hover feature reveal"><div class="feature__ic"><i data-i="wallet"></i></div><h3>Multi-wallet</h3><p>Organise dozens of trading wallets into folders, fund and sweep in bulk, and watch any public address.</p></article>
+          <article class="card card--hover feature reveal" id="safety"><div class="feature__ic"><i data-i="shield"></i></div><h3>Non-custodial</h3><p>Your keys never leave your wallet. Every transaction is reviewed on screen and signed by you. Approvals are amount-limited and revocable.</p></article>
+          <article class="card card--hover feature reveal"><div class="feature__ic"><i data-i="landmark"></i></div><h3>DeFi loans</h3><p>Compare lending markets and borrow against your crypto with a live health-factor gauge and liquidation alerts.</p></article>
+          <article class="card card--hover feature reveal"><div class="feature__ic"><i data-i="copytrade"></i></div><h3>Copy-trading</h3><p>Follow traders with verified on-chain track records, capped by your own budget and stop-loss.</p></article>
+          <article class="card card--hover feature reveal"><div class="feature__ic"><i data-i="activity"></i></div><h3>Backtests & paper mode</h3><p>See win rate, max drawdown and Sharpe on historical data, then simulate live before risking a cent.</p></article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== How it works ===== -->
+    <section class="section" id="how">
+      <div class="container">
+        <div class="section__head reveal"><span class="eyebrow">How it works</span><h2>Three steps. Full control.</h2></div>
+        <div class="steps3">
+          <article class="card step3 reveal"><div class="step3__n">01</div><h3>Connect your wallet</h3><p>Link Phantom, Solflare, MetaMask and more. NECTRA only sees public addresses.</p>
+            <div class="step3__viz"><span class="row" style="gap:8px"><span class="wallet-opt__logo" style="background:#AB9FF2;width:32px;height:32px">P</span><i data-i="link" class="pink"></i><span data-logo="32" class="logo--breathe"></span></span></div></article>
+          <article class="card step3 reveal" style="transition-delay:.1s"><div class="step3__n">02</div><h3>Describe a strategy</h3><p>Chat in plain English. Review the parsed rules, backtest, adjust.</p>
+            <div class="step3__viz"><span class="thinking"><span class="thinking__petals"><i></i><i></i><i></i></span><span class="typing">Parsing strategy</span></span></div></article>
+          <article class="card step3 reveal" style="transition-delay:.2s"><div class="step3__n">03</div><h3>Deploy & relax</h3><p>Start in paper mode. Go live when you’re ready — with a kill-switch always one tap away.</p>
+            <div class="step3__viz"><span class="row" style="gap:10px"><span class="dot dot--pulse"></span><span class="mono small">Petal Grid · running</span><span class="tag tag--green">+4.8%</span></span></div></article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== Live stats band ===== -->
+    <section class="statband" aria-label="Platform statistics (demo)">
+      <div class="container statband__in">
+        <div class="stat"><div class="stat__v"><span data-stat="bots" data-dec="0">0</span></div><div class="stat__l">Bots running now</div></div>
+        <div class="stat"><div class="stat__v"><span data-stat="volume" data-dec="1" data-prefix="$" data-suffix="k">0</span></div><div class="stat__l">Paper volume (30d)</div></div>
+        <div class="stat"><div class="stat__v"><span data-stat="users" data-dec="0">0</span></div><div class="stat__l">Members</div></div>
+        <div class="stat"><div class="stat__v"><span data-count="0" data-dec="0">0</span></div><div class="stat__l">Seed phrases ever requested</div></div>
+      </div>
+    </section>
+
+    <!-- ===== FAQ ===== -->
+    <section class="section" id="faq">
+      <div class="container" style="max-width:820px">
+        <div class="section__head reveal"><span class="eyebrow">FAQ</span><h2>Questions, answered.</h2></div>
+        <div class="acc reveal">
+          <details open><summary>Does NECTRA hold my funds? <i data-i="plus"></i></summary><div class="acc__body">No. NECTRA is non-custodial. Your assets stay in wallets you control, and every on-chain action is shown on a review screen and signed in your own wallet.</div></details>
+          <details><summary>Will you ever ask for my seed phrase? <i data-i="plus"></i></summary><div class="acc__body">Never. No NECTRA screen, email or support agent will ask for your seed phrase, recovery phrase or private key. If anyone does, it’s a scam.</div></details>
+          <details><summary>What is paper trading? <i data-i="plus"></i></summary><div class="acc__body">Bots run against live prices with simulated funds, so you can see how a strategy behaves before going live. Every new bot starts in paper mode.</div></details>
+          <details><summary>How do approvals work? <i data-i="plus"></i></summary><div class="acc__body">When a strategy needs a contract permission, you’ll see exactly which token and how much — defaulting to only the amount needed, never unlimited. You can revoke any approval at any time.</div></details>
+          <details><summary>Why is it invite-only? <i data-i="plus"></i></summary><div class="acc__body">We’re scaling carefully during beta. Request an invite and we’ll email you a code — existing members can also share theirs.</div></details>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" style="padding-top:0">
+      <div class="container">
+        <div class="cta-band reveal">
+          <span data-logo="56" class="logo--breathe" style="margin:0 auto 16px;display:block"></span>
+          <h2 style="font-size:clamp(26px,4vw,36px)">Let your strategy bloom.</h2>
+          <p class="muted mt-8">Join the invite beta. Paper trading first — no deposit needed.</p>
+          <div class="hero__ctas" style="justify-content:center"><a class="btn btn--primary btn--lg" href="register.html#request">Request invite</a><a class="btn btn--lg" href="register.html">I have an invite code</a></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ===== Footer + risk disclaimer ===== -->
+  <footer class="footer">
+    <div class="container">
+      <div class="footer__grid">
+        <div><a class="brand" href="index.html"><span data-logo="26"></span><span class="brand__name">NECTRA</span></a><p class="mt-8">AI trading agent. Non-custodial by design.</p></div>
+        <div><h4>Product</h4><a href="#features">Features</a><a href="dashboard.html">Demo dashboard</a><a href="status.html">System status</a></div>
+        <div><h4>Account</h4><a href="register.html#request">Request invite</a><a href="register.html">Register</a><a href="login.html">Log in</a></div>
+        <div><h4>Legal</h4><a href="#">Terms</a><a href="#">Privacy</a><a href="#">Risk disclosure</a></div>
+      </div>
+      <div class="disclaimer"><strong>Risk disclaimer.</strong> Trading and borrowing crypto-assets carry a high risk of loss, including the loss of your entire investment. Automated strategies and AI-generated suggestions can and do lose money; past and backtested performance does not guarantee future results. NECTRA does not provide investment, financial, tax or legal advice. Paper-trading results use simulated funds. <strong>NECTRA will never ask for your seed phrase.</strong></div>
+      <p class="mt-16 tiny faint">© 2026 NECTRA. Demo build — mock data only.</p>
+    </div>
+  </footer>
+
+  <script src="assets/js/data.js"></script>
+  <script src="assets/js/api.js"></script>
+  <script src="assets/js/core.js"></script>
+  <script src="assets/js/charts.js"></script>
+  <script src="assets/js/pages.js"></script>
+</body>
+</html>

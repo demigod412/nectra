@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>NECTRA Admin</title>
+  <meta name="robots" content="noindex">
+  <meta name="theme-color" content="#0A0A0C">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <script>try{var t=localStorage.getItem('nx-theme');if(t)document.documentElement.dataset.theme=JSON.parse(t)}catch(e){}</script>
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="../assets/css/nectra.css">
+  <style>
+    /* Admin layout (reuses NECTRA tokens & components) */
+    body.admin { --aside: 248px; }
+    .adm-side { position: fixed; inset: 0 auto 0 0; width: var(--aside); background: var(--bg); border-right: 1px solid var(--border); padding: 14px 12px; display: flex; flex-direction: column; gap: 2px; overflow-y: auto; z-index: 45; transition: transform .3s var(--ease); }
+    .adm-side .nav-link b { margin-left: auto; min-width: 20px; height: 20px; border-radius: 10px; background: var(--pink); color: #fff; font: 700 11px/20px var(--font-ui); text-align: center; padding: 0 6px; }
+    .adm-side .nav-link b:empty { display: none; }
+    .adm-top { position: sticky; top: 0; z-index: 40; display: flex; align-items: center; gap: 12px; height: 60px; padding: 0 var(--gutter); background: color-mix(in srgb, var(--bg) 85%, transparent); backdrop-filter: blur(12px); border-bottom: 1px solid var(--border); }
+    .adm-main { margin-left: var(--aside); min-height: 100vh; }
+    .adm-menu { display: none; }
+    .adm-badge { font: 700 10px var(--font-ui); letter-spacing: .12em; text-transform: uppercase; color: var(--pink); border: 1px solid rgba(242,85,154,.35); border-radius: 6px; padding: 2px 6px; }
+    .kpis { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
+    .kpis .card { padding: 16px; }
+    .clickable tbody tr { cursor: pointer; }
+    .evid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+    .mail-body { white-space: pre-wrap; font: 12.5px/1.6 var(--font-mono); color: var(--text-muted); padding: 12px; border-radius: 10px; background: var(--bg-raised); margin-top: 8px; }
+    .pager { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
+    @media (max-width: 1023.98px) {
+      .adm-side { transform: translateX(-100%); box-shadow: 30px 0 80px -20px rgba(0,0,0,.7); }
+      body.side-open .adm-side { transform: none; }
+      .adm-main { margin-left: 0; }
+      .adm-menu { display: inline-grid; }
+    }
+  </style>
+</head>
+<body class="admin" data-page="admin">
+  <a class="skip" href="#main">Skip to content</a>
+  <aside class="adm-side" aria-label="Admin navigation">
+    <a class="brand" href="#overview" style="padding:0 8px;margin-bottom:8px"><span data-logo="28"></span><span class="brand__name">NECTRA</span> <span class="adm-badge">Admin</span></a>
+    <nav id="adm-nav"></nav>
+    <div class="sidebar__foot" style="margin-top:auto">
+      <a class="nav-link" href="../dashboard.html"><i data-i="dashboard"></i><span>Open trader app</span></a>
+      <button class="nav-link" data-action="theme"><i data-i="moon"></i><span>Toggle theme</span></button>
+      <button class="nav-link" data-action="logout"><i data-i="logout"></i><span>Sign out</span></button>
+    </div>
+  </aside>
+
+  <div class="adm-main">
+    <header class="adm-top">
+      <button class="icon-btn adm-menu" id="adm-menu" aria-label="Open navigation"><i data-i="menu"></i></button>
+      <h1 class="strong" id="adm-title" style="font-size:17px;flex:1">Overview</h1>
+      <span class="tag" id="adm-demo" hidden><i data-i="info"></i> Demo mode</span>
+      <a class="status-btn" href="#status" id="adm-status" aria-label="System status"><span class="dot dot--green dot--pulse"></span></a>
+      <span class="avatar" id="adm-avatar" title="">A</span>
+    </header>
+    <main id="main" class="page" style="max-width:1400px"></main>
+  </div>
+
+  <script src="../assets/js/data.js"></script>
+  <script src="../assets/js/api.js"></script>
+  <script src="../assets/js/core.js"></script>
+  <script src="../assets/js/charts.js"></script>
+  <script src="admin.js"></script>
+</body>
+</html>

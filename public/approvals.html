@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Approvals & Permissions · NECTRA</title>
+  <meta name="description" content="Review and revoke smart-contract approvals across your wallets.">
+  <meta name="theme-color" content="#0A0A0C">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <script>try{var t=localStorage.getItem('nx-theme');if(t)document.documentElement.dataset.theme=JSON.parse(t)}catch(e){}</script>
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="assets/css/nectra.css">
+</head>
+<body class="app" data-page="approvals">
+  <a class="skip" href="#main">Skip to content</a>
+  <main id="main" class="page">
+    <div class="page__head">
+      <div><h1 class="page__title">Approvals & permissions <span class="help" tabindex="0" data-tip="An approval (allowance) lets a smart contract move a specific token from your wallet. Revoke ones you no longer use." data-tip-pos="right">?</span></h1>
+        <p class="page__sub">See exactly what each contract can do with your tokens — and revoke it in one tap.</p></div>
+      <div class="page__actions"><button class="btn btn--accent" id="ap-review"><i data-i="eye"></i> Preview an approval request</button></div>
+    </div>
+
+    <div class="grid stagger">
+      <section class="card span-4"><div class="kpi"><span class="kpi__label"><i data-i="shield" class="ic--sm"></i> Active approvals</span><span class="kpi__value" id="ap-count">0</span></div></section>
+      <section class="card span-4"><div class="kpi"><span class="kpi__label"><i data-i="alert" class="ic--sm amber"></i> Unlimited allowances</span><span class="kpi__value amber" id="ap-unl">0</span></div></section>
+      <section class="card span-4"><div class="kpi"><span class="kpi__label"><i data-i="shield-alert" class="ic--sm down"></i> Unverified contracts</span><span class="kpi__value down" id="ap-unv">0</span></div></section>
+
+      <section class="card" aria-labelledby="apl-title">
+        <div class="card__head"><h2 class="card__title" id="apl-title">Active approvals</h2></div>
+        <div class="chips chips--scroll mb-16" id="ap-wallets" role="group" aria-label="Filter by wallet"></div>
+        <div class="table-wrap"><table class="table table--stack">
+          <thead><tr><th>Token</th><th>Spender (contract)</th><th>Allowance</th><th>Risk</th><th>Last used</th><th></th></tr></thead>
+          <tbody id="ap-body"></tbody>
+        </table></div>
+      </section>
+
+      <section class="card span-6 stack"><h2 class="card__title"><i data-i="check"></i> Our approval rules</h2>
+        <ul class="stack small muted">
+          <li class="row-nw"><i data-i="check" class="ic--sm up"></i> Amount-limited by default — only what the action needs.</li>
+          <li class="row-nw"><i data-i="check" class="ic--sm up"></i> Shown in plain language before you sign.</li>
+          <li class="row-nw"><i data-i="check" class="ic--sm up"></i> Unlimited approvals require an explicit opt-in with a warning.</li>
+          <li class="row-nw"><i data-i="check" class="ic--sm up"></i> Revocable any time from this page.</li>
+        </ul></section>
+      <section class="card span-6 stack"><h2 class="card__title"><i data-i="info"></i> Risk labels</h2>
+        <div class="row"><span class="tag tag--green"><i data-i="shield"></i> Verified</span><span class="small muted">Audited, source-verified program.</span></div>
+        <div class="row"><span class="tag tag--red"><i data-i="shield-alert"></i> Unverified</span><span class="small muted">Unknown code — revoke unless you trust it.</span></div>
+        <div class="row"><span class="tag tag--amber"><i data-i="alert"></i> Unlimited allowance</span><span class="small muted">Can move all of that token, forever.</span></div>
+      </section>
+    </div>
+  </main>
+
+  <!-- Approval review sheet (shown before ANY approval is signed) -->
+  <dialog class="modal" id="approve-modal" aria-labelledby="ar-title">
+    <div class="modal__head"><h2 class="modal__title" id="ar-title">Review approval</h2><button class="icon-btn icon-btn--sm" data-close aria-label="Close"><i data-i="x"></i></button></div>
+    <div class="modal__body">
+      <div class="row-nw"><span class="notif__ic" style="color:var(--pink)"><i data-i="bot"></i></span>
+        <div class="grow"><div class="strong">Nectra DCA Executor <span class="tag tag--green"><i data-i="shield"></i> Verified</span></div><div class="caption">Requested by: Monday DCA bot · Main wallet</div></div></div>
+      <div class="review">
+        <div class="review__row"><span>Token</span><span><b>USDC</b> <span class="caption">(USD Coin)</span></span></div>
+        <div class="review__row"><span>Contract</span><span id="ar-contract"></span></div>
+        <div class="review__row"><span>Needed for this bot</span><span class="mono">25.00 USDC / week</span></div>
+      </div>
+      <div class="field"><label class="label" for="ar-amount">Approve amount <button class="link small" id="ar-exact" type="button">Use exact amount</button></label>
+        <div class="input-wrap"><input class="input mono" id="ar-amount" inputmode="decimal" value="25.00"><div class="input-wrap__end"><span class="input-unit">USDC</span></div></div></div>
+      <div class="note note--pink"><i data-i="info"></i><span id="ar-summary"></span></div>
+      <div><div class="label" style="margin-bottom:8px">This contract will be able to</div>
+        <ul class="stack-sm small"><li class="row-nw"><i data-i="check" class="ic--sm up"></i> Swap USDC → SOL on your schedule</li><li class="row-nw"><i data-i="x" class="ic--sm down"></i> Not withdraw to other addresses</li><li class="row-nw"><i data-i="x" class="ic--sm down"></i> Not touch any other token</li></ul></div>
+      <details class="acc" style="background:var(--bg-raised)"><summary>Advanced <i data-i="plus"></i></summary><div class="acc__body">
+        <label class="check"><input type="checkbox" id="ar-unlimited"><span class="check__box"></span><span class="small">Allow unlimited USDC (not recommended)</span></label>
+        <div class="note note--danger" id="ar-unl-warn" hidden><i data-i="alert"></i><span>An unlimited allowance lets this contract move <strong>all</strong> your USDC if it’s ever compromised.</span></div>
+      </div></details>
+      <span class="fee-chip"><i data-i="fuel"></i> Network fee <b>~0.000005 SOL</b></span>
+    </div>
+    <div class="modal__foot"><button class="btn" data-close>Reject</button><button class="btn btn--primary" id="ar-approve">Approve in wallet</button></div>
+  </dialog>
+
+  <script src="assets/js/data.js"></script>
+  <script src="assets/js/api.js"></script>
+  <script src="assets/js/core.js"></script>
+  <script src="assets/js/charts.js"></script>
+  <script src="assets/js/copilot.js"></script>
+  <script src="assets/js/pages.js"></script>
+</body>
+</html>
