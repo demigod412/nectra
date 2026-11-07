@@ -292,36 +292,48 @@ function tuneGrid(type) {
   }
 }
 /**
- * Grid-search parameters against real history and return the best by a
- * drawdown-penalized score. OPTIMISES ON PAST DATA — overfitting is possible,
- * so the result is shown with its drawdown and a buy-and-hold baseline.
+ * Grid-search parameters on the first 70% of history (in-sample), then check the winner on the
+ * last 30% it never saw (out-of-sample). Tuned settings are only recommended (`changed`) when they
+ * also beat the current settings out-of-sample — otherwise the "improvement" was most likely noise.
+ * The number of combinations tried is reported: the more tried, the more a lucky fit is expected.
  */
+const OOS_FRACTION = 0.3;
+const tuneScore = (m) => m.totalReturn - 0.35 * Math.abs(m.maxDrawdown) - (m.trades === 0 ? 1e6 : 0);
+const pick = (m) => ({ totalReturn: m.totalReturn, maxDrawdown: m.maxDrawdown, sharpe: m.sharpe, winRate: m.winRate, trades: m.trades });
+const hodlOf = (p) => ((p[p.length - 1] - p[0]) / p[0]) * 100;
 async function autotune(strategyData, range = '90D') {
   const grid = tuneGrid(strategyData.type);
   if (!grid) return { tunable: false };
   const tok = (strategyData.config && strategyData.config.token) || 'SOL';
   const { prices, source } = await priceSeries(tok, range);
   const budget = strategyData.budget || 500;
-  const hodl = ((prices[prices.length - 1] - prices[0]) / prices[0]) * 100;
-  const base = simulate(prices, strategyData.type, strategyData.pair, strategyData.config, budget);
-  const score = (m) => m.totalReturn - 0.35 * Math.abs(m.maxDrawdown) - (m.trades === 0 ? 1e6 : 0);
+  const cut = Math.floor(prices.length * (1 - OOS_FRACTION));
+  const inS = prices.slice(0, cut), outS = prices.slice(cut);
+  const run = (p, cfg) => simulate(p, strategyData.type, strategyData.pair, cfg, budget);
   let combos = cartesian(grid);
   if (combos.length > 48) combos = combos.filter((_, i) => i % Math.ceil(combos.length / 48) === 0);
-  let best = { cfg: strategyData.config, m: base, sc: score(base) };
+  const baseIn = run(inS, strategyData.config);
+  let best = { cfg: strategyData.config, m: baseIn, sc: tuneScore(baseIn) };
   for (const combo of combos) {
     const cfg = { ...JSON.parse(JSON.stringify(strategyData.config)), ...combo };
     if ('levels' in combo && strategyData.type === 'Grid') cfg.perLevel = budget / combo.levels;
-    const m = simulate(prices, strategyData.type, strategyData.pair, cfg, budget);
-    const sc = score(m);
+    const m = run(inS, cfg);
+    const sc = tuneScore(m);
     if (sc > best.sc) best = { cfg, m, sc };
   }
-  const changed = JSON.stringify(best.cfg) !== JSON.stringify(strategyData.config);
+  const differs = JSON.stringify(best.cfg) !== JSON.stringify(strategyData.config);
+  const baseOut = run(outS, strategyData.config), bestOut = differs ? run(outS, best.cfg) : baseOut;
+  const holdsUp = differs && tuneScore(bestOut) > tuneScore(baseOut);
   return {
-    tunable: true, changed, source, points: prices.length, tried: combos.length, range, buyAndHold: hodl,
+    tunable: true, changed: holdsUp, source, points: prices.length, tried: combos.length, range,
+    split: { inSample: inS.length, outOfSample: outS.length, outOfSampleFraction: OOS_FRACTION },
+    verdict: !differs ? 'current-best' : holdsUp ? 'holds-up' : 'overfit',
+    buyAndHold: hodlOf(outS), buyAndHoldInSample: hodlOf(inS),
     params: Object.fromEntries(Object.keys(grid).map((k) => [k, best.cfg[k]])),
-    config: best.cfg,
-    before: { totalReturn: base.totalReturn, maxDrawdown: base.maxDrawdown, sharpe: base.sharpe, winRate: base.winRate, trades: base.trades },
-    after: { totalReturn: best.m.totalReturn, maxDrawdown: best.m.maxDrawdown, sharpe: best.m.sharpe, winRate: best.m.winRate, trades: best.m.trades }
+    config: holdsUp ? best.cfg : strategyData.config,
+    inSample: { before: pick(baseIn), after: pick(best.m) },
+    // headline numbers are OUT-OF-SAMPLE: what the tuned settings did on data they were not fitted to
+    before: pick(baseOut), after: pick(bestOut)
   };
 }
 

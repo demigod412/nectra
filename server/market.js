@@ -94,7 +94,7 @@ async function pollPyth() {
     const qs = ids.map(([, id]) => 'ids[]=' + id).join('&');
     const r = await (await fetch(`${HERMES}/v2/updates/price/latest?${qs}&parsed=true`, { headers: pythHeaders, signal: AbortSignal.timeout(6000) })).json();
     const byId = Object.fromEntries(ids.map(([sym, id]) => [id, sym]));
-    (r.parsed || []).forEach((p) => { const s = state.get(byId[p.id.replace(/^0x/, '')]); if (s) { s.price = Number(p.price.price) * 10 ** p.price.expo; s.live = true; } });
+    (r.parsed || []).forEach((p) => { const s = state.get(byId[p.id.replace(/^0x/, '')]); if (s) { s.price = Number(p.price.price) * 10 ** p.price.expo; s.live = true; s.at = p.price.publish_time ? p.price.publish_time * 1000 : Date.now(); } });
     pythFailures = 0;
     return true;
   } catch (e) { if (++pythFailures > 5) feed = 'simulated'; return false; }
@@ -107,7 +107,7 @@ async function pollJupiter() {
   try {
     const r = await (await fetch(`${JUP_PRICE}?ids=${Object.values(SOL_MINTS).join(',')}`, { signal: AbortSignal.timeout(6000) })).json();
     let n = 0;
-    for (const [sym, mint] of Object.entries(SOL_MINTS)) { const d = r[mint]; const s = state.get(sym); if (d && s && d.usdPrice > 0) { s.price = d.usdPrice; s.live = true; n++; } }
+    for (const [sym, mint] of Object.entries(SOL_MINTS)) { const d = r[mint]; const s = state.get(sym); if (d && s && d.usdPrice > 0) { s.price = d.usdPrice; s.live = true; s.at = Date.now(); n++; } }
     jupFailures = 0;
     return n > 0;
   } catch (e) { jupFailures++; return false; }
@@ -118,7 +118,7 @@ async function pollGecko(force) {
   try {
     const key = process.env.COINGECKO_API_KEY;
     const r = await (await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${Object.values(GECKO_IDS).join(',')}&vs_currencies=usd`, { headers: key ? { 'x-cg-demo-api-key': key } : {}, signal: AbortSignal.timeout(8000) })).json();
-    for (const [sym, id] of Object.entries(GECKO_IDS)) { const s = state.get(sym); if (r[id] && r[id].usd && s) { s.price = r[id].usd; s.live = true; } }
+    for (const [sym, id] of Object.entries(GECKO_IDS)) { const s = state.get(sym); if (r[id] && r[id].usd && s) { s.price = r[id].usd; s.live = true; s.at = Date.now(); } }
     return true;
   } catch (e) { return false; }
 }
@@ -150,6 +150,8 @@ function change24h(sym) { const s = state.get(sym); const ref = s.hist[POINTS - 
 const price = (sym) => (state.get(sym) ? state.get(sym).price : sym === 'USD' ? 1 : 0);
 const tokens = () => [...state.values()].map((s) => ({ sym: s.sym, name: s.name, color: s.color, price: s.price, ch: change24h(s.sym), live: !!s.live }));
 const exists = (sym) => state.has(sym);
+/** ms since this token last got a real (non-simulated) price; Infinity if it never has */
+const priceAge = (sym) => { const s = state.get(sym); return s && s.live && s.at ? Date.now() - s.at : Infinity; };
 const source = () => ({ feed, realHistory: [...state.values()].some((s) => s.realHistory) });
 
 function series(sym, range = '1D', n = 96) {
@@ -184,4 +186,4 @@ function start() {
   return Promise.race([boot, new Promise((r) => setTimeout(r, 15000))]);
 }
 
-module.exports = { start, price, tokens, series, closes, exists, change24h, source, TOKENS, seeded };
+module.exports = { start, price, priceAge, tokens, series, closes, exists, change24h, source, TOKENS, seeded };

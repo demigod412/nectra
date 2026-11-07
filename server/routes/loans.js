@@ -185,16 +185,15 @@ module.exports = Object.assign((r) => {
     S.audit(u.id, 'loan.cancel', l.id, null, c.req);
     return { ok: true };
   });
-  r.post('/api/loans/:id/repay', (c) => {
-    const u = S.requireUser(c);
+  r.post('/api/loans/:id/repay', (c) => { const u = S.requireUser(c); return S.idempotent(c, u.id, () => {
     const l = q.get("SELECT * FROM loans WHERE id = ? AND user_id = ? AND status IN ('disbursed','defaulted')", c.params.id, u.id); if (!l) fail(404, 'No active loan to repay');
-    const amt = Math.min(num(c.body.amount, 0.01), L.outstandingOf(l));
+    const amt = require('../money').round2(Math.min(num(c.body.amount, 0.01), L.outstandingOf(l))); // whole cents
     const bal = E.accountBalance(u.id);
     if (amt > bal + 1e-9) fail(400, `Your account balance is $${bal.toFixed(2)}. Top it up, or repay on-chain to the repayment address.`);
     q.run('INSERT INTO ledger(user_id, amount, kind, ref, note, created_at) VALUES(?,?,?,?,?,?)', u.id, -amt, 'loan_repayment', 'L' + l.id, `Repayment for loan #${l.id}`, now());
     L.applyRepayment(l.id, amt, { kind: 'repayment', ref: 'account-balance' });
     return { loan: loanView(q.get('SELECT * FROM loans WHERE id = ?', l.id)), balance: E.accountBalance(u.id) };
-  });
+  }); });
   r.get('/api/credit', (c) => { const u = S.requireUser(c); const s = L.creditScore(u.id); return { score: s, ...L.scoreBand(s) }; });
 
   /* ======================= ON-CHAIN APPROVALS ======================= */
@@ -215,6 +214,7 @@ module.exports = Object.assign((r) => {
   });
 
   /* ======================= LIVE BOTS ======================= */
+  const liveWithdrawing = new Set(); // bot ids with a withdrawal in flight (single process)
   r.post('/api/bots/:id/go-live', (c) => {
     const u = S.requireUser(c);
     const s = getSettings();
@@ -246,6 +246,11 @@ module.exports = Object.assign((r) => {
   });
   r.post('/api/bots/:id/live-withdraw', async (c) => {
     const u = S.requireUser(c);
+    if (liveWithdrawing.has(+c.params.id)) fail(409, 'A withdrawal from this bot is already in progress');
+    liveWithdrawing.add(+c.params.id);
+    try { return await liveWithdraw(c, u); } finally { liveWithdrawing.delete(+c.params.id); }
+  });
+  async function liveWithdraw(c, u) {
     if (!u.totp_enabled || !S.verifyTotp(u.totp_secret, c.body.code)) fail(400, 'Incorrect 2FA code');
     const b = q.get('SELECT b.*, w.secret FROM bots b JOIN bot_wallets w ON w.bot_id = b.id WHERE b.id = ? AND b.user_id = ?', c.params.id, u.id); if (!b) fail(404, 'Not a live bot');
     const main = q.get("SELECT * FROM wallets WHERE user_id = ? AND kind = 'main' AND verified = 1", u.id); if (!main) fail(400, 'Set a verified main wallet first');
@@ -256,7 +261,7 @@ module.exports = Object.assign((r) => {
     if (bal.SOL > 0.003) { try { out.push({ token: 'SOL', amount: bal.SOL - 0.002, sig: await sol().botWithdraw(b.secret, main.address, 'SOL', bal.SOL - 0.002) }); } catch (e) { out.push({ token: 'SOL', error: e.message }); } }
     S.audit(u.id, 'bot.live_withdraw', b.id, { out }, c.req);
     return { transfers: out, to: main.address };
-  });
+  }
 
   /* ======================= PUSH ======================= */
   r.get('/api/push/key', () => ({ key: push.init() ? push.publicKey : null }));

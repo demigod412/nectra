@@ -11,7 +11,9 @@
     "start": "node --disable-warning=ExperimentalWarning server/index.js",
     "dev": "node --disable-warning=ExperimentalWarning --watch server/index.js",
     "reset": "node -e \"require('fs').rmSync('data',{recursive:true,force:true});console.log('data/ wiped — restart to reseed')\"",
-    "test": "node --disable-warning=ExperimentalWarning test/smoke.js"
+    "test": "node --disable-warning=ExperimentalWarning test/smoke.js",
+    "test:unit": "node --test \"test/*.test.js\"",
+    "test:all": "npm run test:unit && npm test"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.6.0",

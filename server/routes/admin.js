@@ -111,8 +111,7 @@ module.exports = (r) => {
     S.audit(a.id, 'admin.impersonate_start', u.id, { email: u.email }, c.req);
     return { ok: true, email: u.email, name: u.name };
   });
-  r.post('/api/admin/users/:id/adjust', (c) => {
-    const a = S.requirePerm(c, permFor(c));
+  r.post('/api/admin/users/:id/adjust', (c) => { const a = S.requirePerm(c, permFor(c)); return S.idempotent(c, a.id, () => {
     const u = q.get('SELECT * FROM users WHERE id = ?', c.params.id); if (!u) fail(404, 'User not found');
     const amount = num(c.body.amount, -1e9, 1e9, 'Amount'); if (!amount) fail(400, 'Amount required');
     const note = str(c.body.note, 200); if (!note) fail(400, 'A note is required for manual adjustments');
@@ -128,7 +127,7 @@ module.exports = (r) => {
     notify(u.id, 'transfer', label, `${amount > 0 ? '+' : ''}$${amount.toFixed(2)} · ${note}`, 'wallets.html');
     S.audit(a.id, 'admin.ledger_adjust', u.id, { amount, note, kind }, c.req);
     return { balance: E.accountBalance(u.id) };
-  });
+  }); });
   r.post('/api/admin/users/:id/reset-2fa', (c) => {
     const a = S.requirePerm(c, permFor(c));
     q.run('UPDATE users SET totp_secret = NULL, totp_enabled = 0, totp_pending = NULL WHERE id = ?', c.params.id);
@@ -247,8 +246,7 @@ module.exports = (r) => {
     return { ok: true };
   });
   /** Re-check the wallet, then disburse: method ledger | onchain (verify a signature) */
-  r.post('/api/admin/loans/:id/disburse', async (c) => {
-    const a = S.requirePerm(c, 'loans.disburse');
+  r.post('/api/admin/loans/:id/disburse', async (c) => { const a = S.requirePerm(c, 'loans.disburse'); return S.idempotent(c, a.id, async () => {
     const l = q.get("SELECT * FROM loans WHERE id = ? AND status = 'approved'", c.params.id); if (!l) fail(400, 'Approve the loan before disbursing');
     let rc;
     try { rc = await L.recheck(l); } catch (e) { fail(502, 'Re-check failed: ' + e.message); }
@@ -258,15 +256,18 @@ module.exports = (r) => {
     }
     const method = c.body.method === 'onchain' ? 'onchain' : 'ledger';
     const ref = str(c.body.ref, 140); if (!ref) fail(400, method === 'onchain' ? 'Paste the transaction signature' : 'Enter the payment reference');
+    // one payment can only fund one loan: refuse a reference already used for another disbursement
+    if (q.val('SELECT id FROM loans WHERE disburse_ref = ? AND id != ?', ref, l.id)) fail(409, 'This reference was already used to disburse another loan');
     if (method === 'onchain') {
       const token = ['USDC', 'USDT'].includes(c.body.token) ? c.body.token : 'USDC';
       const v = await require('../chains/solana').verifyTokenTransfer(ref, { to: l.wallet_address, token, amount: l.amount * 0.999 }).catch((e) => ({ ok: false, reason: e.message }));
       if (!v.ok) fail(400, 'On-chain verification failed: ' + v.reason);
     }
-    L.markDisbursed(l, { method, ref, by: a.id });
+    // markDisbursed claims the loan atomically; false = another request (or the treasury auto-link) got there first
+    if (!L.markDisbursed(l, { method, ref, by: a.id })) fail(409, 'This loan was already disbursed');
     S.audit(a.id, 'admin.loan_disburse', l.id, { method, ref, amount: l.amount, recheckOk: rc.ok }, c.req);
     return { ok: true, recheck: rc };
-  });
+  }); });
   /** Unsigned treasury → borrower USDC transfer for an admin's treasury wallet to sign */
   r.post('/api/admin/loans/:id/disburse-build', async (c) => {
     S.requirePerm(c, 'loans.disburse');
@@ -292,6 +293,7 @@ module.exports = (r) => {
     const l = q.get("SELECT * FROM loans WHERE id = ? AND status IN ('defaulted','disbursed')", c.params.id); if (!l) fail(400, 'Only active or defaulted loans');
     if (l.status === 'disbursed' && !q.val("SELECT 1 FROM loan_instalments WHERE loan_id = ? AND status != 'paid' AND due_at < ?", l.id, now())) fail(400, 'Nothing is overdue on this loan');
     const amount = c.body.amount ? num(c.body.amount, 1, L.outstandingOf(l)) : L.outstandingOf(l);
+    if (q.val("SELECT 1 FROM pending_actions WHERE type = 'collect' AND target = ? AND status IN ('pending','executing')", String(l.id))) fail(409, 'A collection for this loan is already waiting for approval or running');
     const id = createAction(a, 'collect', l.id, { loanId: l.id, amount }, amount, c.req);
     return { pending: true, actionId: id };
   });
@@ -490,15 +492,15 @@ module.exports = (r) => {
   });
   function payoutPaid(id, ref) {
     const w = q.get("SELECT * FROM withdrawals WHERE id = ? AND source = 'account' AND status = 'pending_admin'", id); if (!w) throw new Error('Payout is not pending');
-    q.run("UPDATE withdrawals SET status = 'paid', admin_ref = ?, updated_at = ? WHERE id = ?", ref, now(), w.id);
+    if (!q.run("UPDATE withdrawals SET status = 'paid', admin_ref = ?, updated_at = ? WHERE id = ? AND status = 'pending_admin'", ref, now(), w.id).changes) throw new Error('Payout is not pending');
     q.run('INSERT INTO transactions(user_id, type, token, amount, status, to_addr, signature, simulated, confirmations, note, created_at, updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)', w.user_id, 'Withdraw', w.token, w.amount, 'confirmed', w.to_addr, ref, 0, 32, 'Account payout (processed by NECTRA)', now(), now());
     notify(w.user_id, 'transfer', 'Payout sent', `${w.amount.toFixed(2)} was sent to ${w.to_addr.slice(0, 4)}…${w.to_addr.slice(-4)} · ref ${ref.slice(0, 16)}`, 'portfolio.html#history');
     return { ok: true };
   }
-  r.post('/api/admin/payouts/:id/paid', (c) => {
-    const a = S.requirePerm(c, permFor(c));
+  r.post('/api/admin/payouts/:id/paid', (c) => { const a = S.requirePerm(c, permFor(c)); return S.idempotent(c, a.id, () => {
     const w = q.get("SELECT * FROM withdrawals WHERE id = ? AND source = 'account' AND status = 'pending_admin'", c.params.id); if (!w) fail(400, 'Payout is not pending');
     const ref = str(c.body.ref, 120); if (!ref) fail(400, 'Enter the on-chain signature or payment reference');
+    if (q.val("SELECT id FROM withdrawals WHERE admin_ref = ? AND id != ?", ref, w.id)) fail(409, 'This reference was already recorded for another payout');
     if (w.amount >= getSettings().dual_approval_threshold) {
       if (q.val("SELECT 1 FROM pending_actions WHERE type = 'payout' AND target = ? AND status = 'pending'", String(w.id))) fail(409, 'Already waiting for a second approval');
       return { pending: true, actionId: createAction(a, 'payout', w.id, { withdrawalId: w.id, ref }, w.amount, c.req) };
@@ -506,7 +508,7 @@ module.exports = (r) => {
     payoutPaid(w.id, ref);
     S.audit(a.id, 'admin.payout_paid', w.id, { ref }, c.req);
     return { ok: true };
-  });
+  }); });
   r.post('/api/admin/payouts/:id/reject', (c) => {
     const a = S.requirePerm(c, permFor(c));
     const w = q.get("SELECT * FROM withdrawals WHERE id = ? AND source = 'account' AND status = 'pending_admin'", c.params.id); if (!w) fail(400, 'Payout is not pending');

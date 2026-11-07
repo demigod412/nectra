@@ -608,6 +608,7 @@
       ${row('treasury_evm', 'Treasury — EVM', 'Receives USDC/USDT repayments on Ethereum, Base, Arbitrum, BSC, Polygon.', 'text')}
       ${row('treasury_tron', 'Treasury — Tron', 'Receives USDT (TRC-20) repayments.', 'text')}
       ${row('live_bot_max_usd', 'Live bot funding cap (USD)', 'Maximum a user should fund a single live bot with.', 'num')}
+      ${row('live_price_max_age_sec', 'Max price age for live trades (seconds)', 'Stale-price guard: live bots skip trading when a token’s real price is older than this, or the feed is simulated. Admins are alerted when it trips.', 'num')}
       ${row('ai_copilot', 'AI Copilot (Claude)', 'Use Claude to parse strategies when ANTHROPIC_API_KEY is set; otherwise the rule-based parser is used.')}
       <h3 class="card__title mt-24">Monetization & compliance</h3>
       ${row('monetization_enabled', 'Subscription plans (monetization)', 'Master switch. When off, the Plans page and all plan limits are hidden and every feature is available to everyone — no subscriptions, no gating.')}

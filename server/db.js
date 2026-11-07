@@ -283,6 +283,10 @@ addCol('plans', 'price_yearly', 'REAL NOT NULL DEFAULT 0');   // 0 = no annual o
 addCol('plan_payments', 'interval', "TEXT NOT NULL DEFAULT 'monthly'");
 addCol('kyc', 'doc_front', 'TEXT');   // government-ID image (data URL), admin-only
 addCol('kyc', 'doc_back', 'TEXT');
+// Idempotency keys: a retried money-moving request returns the first response instead of running twice
+db.exec(`CREATE TABLE IF NOT EXISTS idempotency_keys (
+  user_id INTEGER NOT NULL, key TEXT NOT NULL, route TEXT NOT NULL, status TEXT NOT NULL,
+  response TEXT, created_at INTEGER NOT NULL, PRIMARY KEY (user_id, key))`);
 db.exec("UPDATE users SET role = 'super_admin' WHERE role = 'admin' AND id = (SELECT MIN(id) FROM users WHERE role IN ('admin','super_admin')) AND NOT EXISTS (SELECT 1 FROM users WHERE role = 'super_admin')");
 
 /* ---- default subscription plans (seeded once; editable in Admin → Plans) ---- */
@@ -346,6 +350,7 @@ const DEFAULT_SETTINGS = {
   dual_approval_threshold: 1000,      // USD; loans/payouts/adjustments at or above need 2 different admins
   default_after_days: 30,             // days past due before a loan becomes defaulted
   live_bot_max_usd: 1000,             // per live bot funding cap
+  live_price_max_age_sec: 30,         // stale-price guard: live bots don't trade on prices older than this
   treasury_solana: '',                // treasury owner address (or Squads vault) — repayments & disbursements
   treasury_evm: '',
   treasury_tron: '',

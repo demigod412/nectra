@@ -577,8 +577,7 @@ module.exports = (r) => {
 
   /* ---------------- withdrawals ---------------- */
   r.get('/api/withdrawals', (c) => { const u = S.requireUser(c); return { rows: q.all('SELECT * FROM withdrawals WHERE user_id = ? ORDER BY id DESC LIMIT 50', u.id) }; });
-  r.post('/api/withdrawals', (c) => {
-    const u = S.requireUser(c);
+  r.post('/api/withdrawals', (c) => { const u = S.requireUser(c); return S.idempotent(c, u.id, () => {
     S.rateLimit(c.req, 'withdraw', 10, 60000);
     const source = c.body.source === 'account' ? 'account' : 'wallet';
     const to = str(c.body.to, 64);
@@ -606,7 +605,7 @@ module.exports = (r) => {
       sendMail(u.email, 'Confirm your NECTRA withdrawal', `Code: ${code}\nAmount: ${amount} ${token}\nTo: ${to}\nIf you didn’t request this, change your password immediately.`, u);
     }
     return { id, method: u.totp_enabled ? 'totp' : 'email', whitelisted: !!(book && book.whitelisted), label: book && book.label, fee, token, ...(code && getSettings().demo_mode ? { devCode: code } : {}) };
-  });
+  }); });
   r.post('/api/withdrawals/:id/verify', (c) => {
     const u = S.requireUser(c);
     S.rateLimit(c.req, 'wverify', 15, 60000);
@@ -617,10 +616,13 @@ module.exports = (r) => {
     if (w.source === 'account') {
       const bal = E.accountBalance(u.id);
       if (w.amount > bal + 1e-9) fail(400, 'Insufficient account balance');
-      tx(() => {
+      const moved = tx(() => {
+        // claim first so a duplicate verify can never debit the ledger twice
+        if (!q.run("UPDATE withdrawals SET status = 'pending_admin', updated_at = ? WHERE id = ? AND status = 'awaiting_code'", now(), w.id).changes) return false;
         q.run('INSERT INTO ledger(user_id, amount, kind, ref, note, created_at) VALUES(?,?,?,?,?,?)', u.id, -w.amount, 'withdrawal', 'W' + w.id, `Payout to ${w.to_addr}`, now());
-        q.run("UPDATE withdrawals SET status = 'pending_admin', updated_at = ? WHERE id = ?", now(), w.id);
+        return true;
       });
+      if (!moved) fail(409, 'Withdrawal was already verified');
       notifyAdmins('transfer', 'Payout request', `User #${u.id} requested $${w.amount.toFixed(2)} to ${w.to_addr.slice(0, 6)}…`, '/admin#payouts');
       S.audit(u.id, 'withdraw.request', w.id, { amount: w.amount, source: 'account' }, c.req);
       return { status: 'pending_admin' };

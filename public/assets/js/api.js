@@ -6,8 +6,23 @@
   const NX = (window.NX = window.NX || {});
 
   /* ---------------- REST client ---------------- */
+  /* Money-moving POSTs carry an Idempotency-Key. The same request (path + body) repeated within
+     2 minutes - a double click, a retry after a dropped connection - reuses the key, so the server
+     replays the first result instead of paying twice. */
+  const IDEM_PATHS = /\/api\/(withdrawals|loans\/\d+\/repay|bots\/\d+\/live-withdraw|admin\/(loans\/\d+\/disburse|payouts\/\d+\/paid|users\/\d+\/adjust))(\/|$)/;
+  const idemKeys = new Map();
+  const idemKeyFor = (path, payload) => {
+    const sig = path + '|' + payload, t = Date.now();
+    for (const [k, v] of idemKeys) if (v.t < t - 120000) idemKeys.delete(k);
+    let e = idemKeys.get(sig);
+    if (!e) { e = { key: (crypto.randomUUID ? crypto.randomUUID() : String(t) + Math.random().toString(36).slice(2)).replace(/[^A-Za-z0-9-]/g, ''), t }; idemKeys.set(sig, e); }
+    return e.key;
+  };
   NX.api = async (method, path, body) => {
-    const r = await fetch(path, { method, credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-Nectra': '1' }, body: body === undefined || method === 'GET' ? undefined : JSON.stringify(body) });
+    const payload = body === undefined || method === 'GET' ? undefined : JSON.stringify(body);
+    const headers = { 'Content-Type': 'application/json', 'X-Nectra': '1' };
+    if (method === 'POST' && IDEM_PATHS.test(path)) headers['Idempotency-Key'] = idemKeyFor(path, payload || '');
+    const r = await fetch(path, { method, credentials: 'same-origin', headers, body: payload });
     let j = {};
     try { j = await r.json(); } catch (e) { /* empty */ }
     if (!r.ok) {

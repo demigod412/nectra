@@ -71,14 +71,34 @@ function runBots() {
    The strategy decides on a scratch copy; only swaps that confirm on-chain are
    committed. Any failure pauses the bot with the reason. */
 const liveBusy = new Set();
+/* Stale-price guard: a live bot never trades on a price older than live_price_max_age_sec (default 30s)
+   or on a simulated feed. Trading resumes by itself when fresh prices return; admins are alerted once
+   per stale episode. */
+const staleSince = new Map(); // sym -> first time we saw it stale
+function priceIsFresh(sym, s) {
+  const maxMs = Math.max(5, +s.live_price_max_age_sec || 30) * 1000;
+  const age = market.priceAge(sym);
+  const feed = market.source().feed;
+  const fresh = age <= maxMs && !/simulated/.test(feed);
+  if (!fresh && !staleSince.has(sym)) {
+    staleSince.set(sym, now());
+    require('./events').notifyAdmins('security', `Live trading halted for ${sym}`, `Price is ${age === Infinity ? 'not live' : Math.round(age / 1000) + 's old'} (feed: ${feed}, limit ${maxMs / 1000}s). Live bots on ${sym} won't trade until fresh prices return.`, '/admin#bots');
+  } else if (fresh && staleSince.has(sym)) {
+    staleSince.delete(sym);
+    require('./events').notifyAdmins('security', `Live trading resumed for ${sym}`, 'Fresh prices are back.', '/admin#bots');
+  }
+  return fresh;
+}
 function runLiveBots(t) {
-  if (!getSettings().live_trading_enabled) return;
+  const s = getSettings();
+  if (!s.live_trading_enabled) return;
   for (const row of q.all("SELECT b.*, w.secret FROM bots b JOIN bot_wallets w ON w.bot_id = b.id WHERE b.status = 'running' AND b.mode = 'live'")) {
     if (liveBusy.has(row.id)) continue;
     const b = loadBot(row);
     const sym = b.pair.split('/')[0];
     const p = market.price(sym);
     if (!p) continue;
+    if (!priceIsFresh(sym, s)) continue;
     const scratch = JSON.parse(JSON.stringify(b));
     const res = strategy.step(scratch, p, t);
     if (!res.trades.length) { if (JSON.stringify(scratch.state) !== JSON.stringify(b.state)) { b.state = scratch.state; saveBot(b); } continue; }

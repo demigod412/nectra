@@ -157,7 +157,12 @@ module.exports = (r) => {
     if (family === 'tron' && !require('../chains/tron').isAddress(address)) fail(400, 'Not a valid Tron address');
     const nonce = crypto.randomBytes(12).toString('hex');
     const label = { login: 'Sign in to NECTRA', register: 'Create a NECTRA account', link: 'Link this wallet to NECTRA', loan: 'Verify wallet ownership for a NECTRA loan application' }[purpose];
-    const message = `${label}\n\nWallet: ${address}\nNonce: ${nonce}\nIssued: ${new Date().toISOString()}\n\nThis request will not trigger a blockchain transaction or cost any fees.`;
+    // EIP-4361 (Sign-In with Ethereum) layout for every chain: binds the signature to this site's domain
+    // and states the expiry, so wallets can warn about look-alike sites and the user sees where it's valid.
+    const { domain, origin } = siteOf(c.req);
+    const issued = new Date(), expires = new Date(issued.getTime() + NONCE_TTL);
+    const chainName = { solana: 'Solana', evm: 'Ethereum', tron: 'Tron' }[family];
+    const message = `${domain} wants you to sign in with your ${chainName} account:\n${address}\n\n${label}. This request will not trigger a blockchain transaction or cost any fees.\n\nURI: ${origin}\nVersion: 1\nChain ID: ${family === 'evm' ? 1 : family}\nNonce: ${nonce}\nIssued At: ${issued.toISOString()}\nExpiration Time: ${expires.toISOString()}`;
     q.run('INSERT INTO nonces(nonce, address, purpose, message, user_id, created_at, family) VALUES(?,?,?,?,?,?,?)', nonce, address, purpose, message, c.auth ? c.auth.user.id : null, now(), family);
     return { nonce, message, address };
   });
@@ -217,10 +222,18 @@ module.exports = (r) => {
   });
 };
 
+const NONCE_TTL = 10 * 60000;
+/** The site's domain/origin: PUBLIC_URL in production, else the request's Host header (dev) */
+function siteOf(req) {
+  const pub = process.env.PUBLIC_URL;
+  if (pub) { try { const u = new URL(pub); return { domain: u.host, origin: u.origin }; } catch (e) { /* fall through */ } }
+  const host = String((req && req.headers.host) || 'localhost').replace(/[^A-Za-z0-9.:-]/g, '');
+  return { domain: host, origin: `http://${host}` };
+}
 /** Verify a signed nonce message (shared with wallet linking & loan checks) */
 async function consumeWalletProof(body, expectPurpose, userId) {
   const n = q.get('SELECT * FROM nonces WHERE nonce = ? AND used = 0', String(body.nonce || ''));
-  if (!n || now() - n.created_at > 10 * 60000) fail(400, 'Signature request expired — try again');
+  if (!n || now() - n.created_at > NONCE_TTL) fail(400, 'Signature request expired — try again');
   if (expectPurpose && n.purpose !== expectPurpose) fail(400, 'Signature was made for a different action');
   if (userId && n.user_id && n.user_id !== userId) fail(403, 'Signature belongs to another session');
   q.run('UPDATE nonces SET used = 1 WHERE nonce = ?', n.nonce); // single use, even when verification fails

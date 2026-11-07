@@ -22,8 +22,8 @@ const OFFICER = { email: 'officer@nectra.local', password: OWN ? TEST_PW.OFFICER
 
 function client() {
   let cookie = '';
-  return async (method, p, body) => {
-    const r = await fetch(BASE + p, { method, headers: { 'Content-Type': 'application/json', 'X-Nectra': '1', cookie }, body: body ? JSON.stringify(body) : undefined });
+  return async (method, p, body, extra) => {
+    const r = await fetch(BASE + p, { method, headers: { 'Content-Type': 'application/json', 'X-Nectra': '1', cookie, ...(extra || {}) }, body: body ? JSON.stringify(body) : undefined });
     const sc = r.headers.get('set-cookie'); if (sc) cookie = sc.split(';')[0];
     const text = await r.text(); let j; try { j = JSON.parse(text); } catch (e) { j = text; }
     if (!r.ok) throw new Error(`${method} ${p} → ${r.status} ${j && j.error}`);
@@ -76,6 +76,7 @@ process.on('exit', () => { if (child) child.kill(); if (TMP) try { fs.rmSync(TMP
   const w = wallet();
   const wc = client();
   let nn = await wc('POST', '/api/auth/wallet/nonce', { address: w.address, purpose: 'register' });
+  ok(/wants you to sign in with your Solana account:/.test(nn.message) && /\nURI: http/.test(nn.message) && /\nExpiration Time: \d{4}-/.test(nn.message), 'wallet sign-in message is domain-bound with an expiry (EIP-4361 layout)');
   await wc('POST', '/api/auth/wallet/verify', { nonce: nn.nonce, signature: w.sign(nn.message), code: 'NECTRA26', provider: 'Test' });
   const wc2 = client();
   nn = await wc2('POST', '/api/auth/wallet/nonce', { address: w.address, purpose: 'login' });
@@ -256,8 +257,16 @@ process.on('exit', () => { if (child) child.kill(); if (TMP) try { fs.rmSync(TMP
   loans = await u('GET', '/api/loans');
   const myLoan = loans.loans.find((l) => l.id === app.loan.id);
   ok(loans.accountBalance >= 200 && myLoan.status === 'disbursed' && myLoan.instalments.length >= 1, 'disbursed → balance credited + instalment schedule created');
-  const rp = await u('POST', `/api/loans/${app.loan.id}/repay`, { amount: 50 });
+  const cents = (v) => Math.round(v * 100);
+  ok(myLoan.instalments.reduce((s, i) => s + cents(i.amount), 0) === cents(myLoan.owed) && myLoan.instalments.every((i) => Number.isInteger(cents(i.amount) ) && Math.abs(i.amount * 100 - cents(i.amount)) < 1e-6), 'instalments are whole cents and sum exactly to what is owed');
+  let dup = ''; try { await a('POST', `/api/admin/loans/${app.loan.id}/disburse`, { ref: 'MANUAL-TEST-001' }); } catch (e) { dup = e.message; }
+  ok(/400|409/.test(dup), 'a second disbursement of the same loan is refused');
+  const idem = { 'Idempotency-Key': 'test-repay-' + Date.now() };
+  const rp = await u('POST', `/api/loans/${app.loan.id}/repay`, { amount: 50 }, idem);
   ok(Math.abs(rp.loan.repaid - 50) < 1e-6, 'user partial repayment from account balance');
+  const rp2 = await u('POST', `/api/loans/${app.loan.id}/repay`, { amount: 50 }, idem);
+  const afterRetry = (await u('GET', '/api/loans')).loans.find((l) => l.id === app.loan.id);
+  ok(rp2.idempotentReplay === true && Math.abs(afterRetry.repaid - 50) < 1e-6, 'retried repayment with the same Idempotency-Key is replayed, not charged twice');
 
   // --- two-admin approvals
   const adj = await a('POST', '/api/admin/users/2/adjust', { amount: 2500, note: 'Large test credit' });

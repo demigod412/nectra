@@ -175,6 +175,34 @@ function consumeCode({ userId, email, purpose, code, ref }) {
   return row;
 }
 
+/* ---------- idempotency ----------
+   Money-moving routes run through idempotent(): when the client sends an Idempotency-Key header,
+   the first response is stored and replayed for any retry with the same key (same user + route),
+   and a concurrent duplicate gets 409 instead of executing twice. Keys expire after 24h. */
+const IDEM_TTL = 24 * 3600 * 1000;
+async function idempotent(c, userId, fn) {
+  const key = String(c.req.headers['idempotency-key'] || '').slice(0, 100);
+  if (!key) return fn();
+  if (!/^[A-Za-z0-9_.:-]{8,100}$/.test(key)) fail(400, 'Invalid Idempotency-Key');
+  const route = (c.req.method || 'POST') + ' ' + String(c.req.url || '').split('?')[0];
+  q.run('DELETE FROM idempotency_keys WHERE created_at < ?', now() - IDEM_TTL);
+  const prev = q.get('SELECT * FROM idempotency_keys WHERE user_id = ? AND key = ?', userId, key);
+  if (prev) {
+    if (prev.route !== route) fail(422, 'Idempotency-Key was already used for a different request');
+    if (prev.status === 'done') return { ...JSON.parse(prev.response), idempotentReplay: true };
+    fail(409, 'This request is already being processed');
+  }
+  q.run("INSERT INTO idempotency_keys(user_id, key, route, status, created_at) VALUES(?,?,?,'running',?)", userId, key, route, now());
+  try {
+    const res = await fn();
+    q.run("UPDATE idempotency_keys SET status = 'done', response = ? WHERE user_id = ? AND key = ?", JSON.stringify(res === undefined ? {} : res), userId, key);
+    return res;
+  } catch (e) {
+    q.run('DELETE FROM idempotency_keys WHERE user_id = ? AND key = ?', userId, key); // failed: allow a clean retry
+    throw e;
+  }
+}
+
 /* ---------- audit ---------- */
 function audit(actorId, action, target, meta, req) {
   q.run('INSERT INTO audit(actor_id, action, target, meta, ip, created_at) VALUES(?,?,?,?,?,?)', actorId || null, action, target == null ? null : String(target), meta ? JSON.stringify(meta) : null, req ? clientIp(req) : null, now());
@@ -183,5 +211,5 @@ function audit(actorId, action, target, meta, req) {
 module.exports = {
   hashPassword, verifyPassword, passwordProblems, sha256, token,
   createSession, clearSession, loadSession, requireUser, requireAdmin, requirePerm, can, isStaff, STAFF_ROLES, PERMS, checkCsrf, rateLimit,
-  newTotpSecret, verifyTotp, hotp, issueCode, consumeCode, audit, SESSION_COOKIE
+  newTotpSecret, verifyTotp, hotp, issueCode, consumeCode, audit, idempotent, SESSION_COOKIE
 };

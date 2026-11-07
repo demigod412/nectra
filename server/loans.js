@@ -37,9 +37,10 @@ function creditScore(userId) {
 const scoreBand = (s) => (s < 500 ? { band: 'Poor', mult: 0.5 } : s < 600 ? { band: 'Fair', mult: 0.75 } : s < 700 ? { band: 'Good', mult: 1 } : s < 780 ? { band: 'Very good', mult: 1.25 } : { band: 'Excellent', mult: 1.5 });
 const maxFor = (product, score) => Math.round(product.max_amount * scoreBand(score).mult);
 
-/* ---------------- money helpers ---------------- */
-const owedOf = (l) => l.amount * (1 + (l.apr / 100) * (l.term_days / 365)) + (l.late_fees || 0);
-const outstandingOf = (l) => Math.max(0, owedOf(l) - l.repaid);
+/* ---------------- money helpers (integer cents — see money.js for the loan policy) ---------------- */
+const M = require('./money');
+const owedOf = (l) => M.fromCents(M.owedCents(l));
+const outstandingOf = (l) => M.fromCents(M.outstandingCents(l));
 
 /* ---------------- multi-chain wallet snapshot ---------------- */
 async function snapshot(wallet, { demo } = {}) {
@@ -163,7 +164,7 @@ async function collect(loan, maxAmount) {
     if (remaining <= 0.01) break;
     try {
       const a = await readAllowance(d);
-      const take = Math.min(remaining, a.allowance, a.balance);
+      const take = M.round2(Math.min(remaining, a.allowance, a.balance)); // whole cents only
       if (take <= 0.01) { results.push({ network: d.network, token: d.token, skipped: 'no allowance or balance' }); continue; }
       let ref;
       if (d.simulated) ref = 'SIM-COLLECT-' + d.id + '-' + now();
@@ -172,7 +173,7 @@ async function collect(loan, maxAmount) {
       else if (d.family === 'tron') ref = await tron().collect(d.owner, take, s.treasury_tron || tron().collectorAddress());
       q.run("UPDATE loan_delegations SET status = 'collected' WHERE id = ? AND ? >= amount * 0.999", d.id, take);
       applyRepayment(loan.id, take, { kind: 'collection', ref, network: d.network, token: d.token, simulated: !!d.simulated });
-      q.run('UPDATE loans SET collected = collected + ? WHERE id = ?', take, loan.id);
+      q.run('UPDATE loans SET collected = ? WHERE id = ?', M.round2((q.val('SELECT collected FROM loans WHERE id = ?', loan.id) || 0) + take), loan.id);
       remaining -= take;
       results.push({ network: d.network, token: d.token, amount: take, ref });
     } catch (e) { results.push({ network: d.network, token: d.token, error: e.message }); }
@@ -183,13 +184,11 @@ async function collect(loan, maxAmount) {
 /* ---------------- schedule, repayments, late fees ---------------- */
 function createSchedule(loan) {
   const n = Math.max(1, loan.instalments || 1);
-  const total = owedOf({ ...loan, late_fees: 0 });
-  const per = +(total / n).toFixed(2);
+  const parts = M.splitCents(M.owedCents({ ...loan, late_fees: 0 }), n); // exact: sums to the cent
   const start = loan.disbursed_at || now();
   q.run('DELETE FROM loan_instalments WHERE loan_id = ?', loan.id);
   for (let k = 1; k <= n; k++) {
-    const amt = k === n ? +(total - per * (n - 1)).toFixed(2) : per;
-    q.run('INSERT INTO loan_instalments(loan_id, n, due_at, amount) VALUES(?,?,?,?)', loan.id, k, start + Math.round((loan.term_days * DAY * k) / n), amt);
+    q.run('INSERT INTO loan_instalments(loan_id, n, due_at, amount) VALUES(?,?,?,?)', loan.id, k, start + Math.round((loan.term_days * DAY * k) / n), M.fromCents(parts[k - 1]));
   }
   q.run('UPDATE loans SET due_at = ? WHERE id = ?', start + loan.term_days * DAY, loan.id);
 }
@@ -198,23 +197,26 @@ function applyRepayment(loanId, amount, meta = {}) {
   return tx(() => {
     const l = q.get('SELECT * FROM loans WHERE id = ?', loanId);
     if (!l) return null;
-    let left = amount;
-    for (const i of q.all("SELECT * FROM loan_instalments WHERE loan_id = ? AND status != 'paid' ORDER BY n", loanId)) {
-      if (left <= 0.004) break;
-      const due = i.amount + i.late_fee - i.paid;
-      const pay = Math.min(due, left);
-      left -= pay;
-      q.run('UPDATE loan_instalments SET paid = paid + ?, status = ? WHERE id = ?', pay, pay >= due - 0.005 ? 'paid' : i.status, i.id);
+    // integer cents throughout; never apply more than is outstanding — the rest is reported as excess
+    const paymentC = M.toCents(amount);
+    const appliedC = Math.min(paymentC, M.outstandingCents(l));
+    const excess = M.fromCents(paymentC - appliedC);
+    const insts = q.all("SELECT * FROM loan_instalments WHERE loan_id = ? AND status != 'paid' ORDER BY n", loanId);
+    for (const a of M.allocate(appliedC, insts).applied) {
+      const i = insts.find((x) => x.id === a.id);
+      q.run('UPDATE loan_instalments SET paid = ?, status = ? WHERE id = ?', M.fromCents(M.toCents(i.paid) + a.cents), a.settled ? 'paid' : i.status, i.id);
     }
-    const repaid = l.repaid + amount;
-    const done = repaid >= owedOf(l) - 0.01;
+    amount = M.fromCents(appliedC);
+    const repaid = M.fromCents(M.toCents(l.repaid) + appliedC);
+    const done = M.toCents(repaid) >= M.owedCents(l);
+    if (excess > 0) notifyAdmins('transfer', `Overpayment · loan #${l.id}`, `$${excess.toFixed(2)} received beyond what was owed (${meta.ref || 'no ref'}) — refund or credit it manually.`, '/admin/#loans/' + l.id);
     q.run('UPDATE loans SET repaid = ?, status = ?, updated_at = ? WHERE id = ?', repaid, done ? 'repaid' : l.status, now(), l.id);
     q.run('INSERT INTO transactions(user_id, type, token, amount, status, signature, simulated, confirmations, note, created_at, updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)',
       l.user_id, 'Loan', meta.token || l.asset, amount, 'confirmed', meta.ref || null, meta.simulated ? 1 : 0, 32, `${meta.kind === 'collection' ? 'Collected' : 'Repayment'} · loan #${l.id}${meta.network ? ' · ' + meta.network : ''}`, now(), now());
     creditScore(l.user_id);
     notify(l.user_id, 'transfer', done ? 'Loan fully repaid 🌸' : meta.kind === 'collection' ? 'Funds collected for overdue loan' : 'Repayment received', `$${amount.toFixed(2)} applied to loan #${l.id}. Outstanding: $${Math.max(0, owedOf(l) - repaid).toFixed(2)}.`, 'loans.html#mine');
     if (done) notifyAdmins('transfer', 'Loan repaid', `Loan #${l.id} is fully repaid`, '/admin/#loans/' + l.id);
-    return { done, repaid };
+    return { done, repaid, applied: amount, excess };
   });
 }
 function flag(loan, text) {
@@ -247,9 +249,10 @@ async function runSchedules() {
       if (left > 0 && left < 3 * DAY && left > 2 * DAY) await remind(l, i, '3d');
       else if (left > 0 && left < DAY) await remind(l, i, '1d');
       if (left < -p.grace_days * DAY && i.late_fee === 0) {
-        const fee = +((i.amount - i.paid) * p.late_fee_pct / 100).toFixed(2);
-        q.run("UPDATE loan_instalments SET late_fee = ?, status = 'late' WHERE id = ?", fee, i.id);
-        q.run('UPDATE loans SET late_fees = late_fees + ? WHERE id = ?', fee, l.id);
+        const feeC = M.lateFeeCents(M.toCents(i.amount) - M.toCents(i.paid), p.late_fee_pct);
+        const fee = M.fromCents(feeC);
+        if (!q.run("UPDATE loan_instalments SET late_fee = ?, status = 'late' WHERE id = ? AND late_fee = 0", fee, i.id).changes) continue;
+        q.run('UPDATE loans SET late_fees = ? WHERE id = ?', M.fromCents(M.toCents(q.val('SELECT late_fees FROM loans WHERE id = ?', l.id) || 0) + feeC), l.id);
         notify(l.user_id, 'security', 'Late fee applied', `Instalment ${i.n} of loan #${l.id} is ${p.grace_days}+ days overdue. A ${p.late_fee_pct}% late fee ($${fee}) was added.`, 'loans.html#mine');
         creditScore(l.user_id);
       }
@@ -349,13 +352,17 @@ async function runCollateral() {
 }
 function markDisbursed(l, { method, ref, by }) {
   if (l.status !== 'approved') return false;
-  tx(() => {
+  const done = tx(() => {
     const at = now();
+    // Atomic claim: only one caller can move approved -> disbursed (manual disburse vs treasury auto-link, retries)
+    if (!q.run("UPDATE loans SET status = 'disbursed', updated_at = ? WHERE id = ? AND status = 'approved'", at, l.id).changes) return false;
     if (method === 'ledger') q.run('INSERT INTO ledger(user_id, amount, kind, ref, note, created_by, created_at) VALUES(?,?,?,?,?,?,?)', l.user_id, l.amount, 'loan_disbursement', ref, `Loan #${l.id} disbursement`, by, at);
     q.run("UPDATE loans SET status = 'disbursed', disbursed_at = ?, disburse_ref = ?, disburse_method = ?, disburse_sig = ?, updated_at = ? WHERE id = ?", at, ref, method, method === 'ledger' ? null : ref, at, l.id);
     createSchedule({ ...l, disbursed_at: at });
     q.run('INSERT INTO transactions(user_id, type, token, amount, status, signature, simulated, confirmations, note, created_at, updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)', l.user_id, 'Loan', l.asset, l.amount, 'confirmed', method === 'ledger' ? null : ref, 0, 32, `Disbursement · loan #${l.id} · ${method === 'ledger' ? 'account balance' : 'on-chain'} · ${ref}`, at, at);
+    return true;
   });
+  if (!done) return false;
   const u = q.get('SELECT * FROM users WHERE id = ?', l.user_id);
   const where = method === 'ledger' ? 'your NECTRA account balance' : `your wallet ${l.wallet_address.slice(0, 4)}…${l.wallet_address.slice(-4)}`;
   notify(l.user_id, 'transfer', 'Loan funds sent 🌸', `$${l.amount.toFixed(2)} was sent to ${where}. First payment details are in the app.`, 'loans.html#mine');
