@@ -19,7 +19,7 @@
     "@anthropic-ai/sdk": "^1.6.0",
     "@bitcoinerlab/secp256k1": "^2.0.0",
     "@solana/spl-token": "^0.4.15",
-    "@solana/web3.js": "^1.99.0",
+    "@solana/web3.js": "^3.1.1",
     "bip32": "^5.0.1",
     "bitcoinjs-lib": "^7.0.5",
     "bs58": "^6.0.0",
