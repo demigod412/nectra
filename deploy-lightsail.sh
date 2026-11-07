@@ -102,7 +102,8 @@ PUBLIC_URL=https://$DOMAIN
 # TRON_API_KEY=
 # SMTP_HOST= SMTP_PORT=587 SMTP_USER= SMTP_PASS= MAIL_FROM="NECTRA <no-reply@$DOMAIN>"
 # NOWPAYMENTS_API_KEY= NOWPAYMENTS_IPN_SECRET=   # crypto subscription checkout
-# VAPID_PUBLIC= VAPID_PRIVATE=   # web push (generate with: npx web-push generate-vapid-keys)
+# VAPID_SUBJECT=mailto:admin@$DOMAIN
+# VAPID_PUBLIC_KEY= VAPID_PRIVATE_KEY=   # web push (generate with: npx web-push generate-vapid-keys)
 ENV
   chmod 600 .env
   ok ".env created with a fresh MASTER_KEY (chmod 600 — back this file up!)"

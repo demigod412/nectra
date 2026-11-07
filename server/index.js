@@ -11,7 +11,7 @@ const envFile = path.join(__dirname, '..', '.env');
 if (fs.existsSync(envFile)) fs.readFileSync(envFile, 'utf8').split(/\r?\n/).forEach((l) => { const m = l.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/); if (m && process.env[m[1]] === undefined) process.env[m[1]] = m[2].replace(/^["']|["']$/g, ''); });
 
 const { createRouter, readBody, send, serveStatic, HttpError, clientIp } = require('./http');
-const { getSettings } = require('./db');
+const { getSettings, setSetting } = require('./db');
 const { loadSession, checkCsrf } = require('./security');
 const market = require('./market');
 const engine = require('./engine');
@@ -69,6 +69,9 @@ const server = http.createServer(async (req, res) => {
 });
 
 (async () => {
+  // DEMO_MODE in .env is authoritative at startup: it overrides any demo_mode saved earlier from
+  // Admin > Settings (the stored value otherwise wins over the env default after the first save).
+  if (process.env.DEMO_MODE === '0' || process.env.DEMO_MODE === '1') setSetting('demo_mode', process.env.DEMO_MODE === '1');
   await market.start();              // live prices first, so seeded values match the market
   created = seed(getSettings());
   require('./push').init();
@@ -86,6 +89,9 @@ function onListen() {
     if (created.officer) console.log(`     Loan officer: ${created.officer.email}  /  ${created.officer.password}`);
     if (created.admin2) console.log(`     Second admin: ${created.admin2.email}  /  ${created.admin2.password}  (for two-admin approvals)\n`);
   }
+  const cluster = require('./chain').CLUSTER;
+  if (cluster !== 'mainnet-beta') console.warn(`     ⚠ SOLANA_CLUSTER=${cluster}: Solana USDC/USDT use DEVNET test mints. Set SOLANA_CLUSTER=mainnet-beta for production.`);
+  if (!getSettings().demo_mode && cluster !== 'mainnet-beta') console.warn('     ⚠ Demo mode is off but Solana is not on mainnet — real users would be sent to test tokens.');
   console.log(`     AI Copilot:       ${require('./ai').enabled() ? 'Claude (' + require('./ai').MODEL + ')' : 'rule-based (set ANTHROPIC_API_KEY to use Claude)'}`);
 }
 
