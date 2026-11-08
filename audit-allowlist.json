@@ -1,0 +1,10 @@
+{
+  "_readme": "Reviewed npm advisories that CI may ignore. Each entry needs a reason and a review-by date; remove it as soon as a fix exists. Checked by tools/audit-check.js.",
+  "advisories": {
+    "GHSA-3gc7-fjrx-p6mg": {
+      "package": "bigint-buffer",
+      "reason": "Buffer overflow in the native toBigIntLE() binding. Pulled in by @solana/spl-token -> @solana/buffer-layout-utils. No patched version exists (unmaintained since 2022); npm's only fix is downgrading spl-token to 0.1.8, which breaks the app. It only decodes token-account data from our own Solana RPC, not user input, and falls back to pure JS when the native binding isn't built.",
+      "reviewBy": "2027-02-01"
+    }
+  }
+}
