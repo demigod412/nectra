@@ -350,7 +350,8 @@ const DEFAULT_SETTINGS = {
   dual_approval_threshold: 1000,      // USD; loans/payouts/adjustments at or above need 2 different admins
   default_after_days: 30,             // days past due before a loan becomes defaulted
   live_bot_max_usd: 1000,             // per live bot funding cap
-  live_price_max_age_sec: 30,         // stale-price guard: live bots don't trade on prices older than this
+  live_price_max_age_sec: 30,
+  loan_approval_revoke_in_app: true,  // off = the in-app Revoke button is locked for approvals securing an open loan (users can still revoke in their wallet)         // stale-price guard: live bots don't trade on prices older than this
   treasury_solana: '',                // treasury owner address (or Squads vault) — repayments & disbursements
   treasury_evm: '',
   treasury_tron: '',

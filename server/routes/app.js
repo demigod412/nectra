@@ -644,7 +644,8 @@ module.exports = (r) => {
   /* ---------------- approvals ---------------- */
   r.get('/api/approvals', (c) => {
     const u = S.requireUser(c);
-    return { rows: q.all('SELECT * FROM approvals WHERE user_id = ? AND revoked_at IS NULL ORDER BY created_at DESC', u.id).map((a) => ({ ...a, unlimited: !!a.unlimited, verified: !!a.verified })) };
+    const L = require('../loans');
+    return { rows: q.all('SELECT * FROM approvals WHERE user_id = ? AND revoked_at IS NULL ORDER BY created_at DESC', u.id).map((a) => { const lockedLoanId = L.revokeLocked(a); return { ...a, unlimited: !!a.unlimited, verified: !!a.verified, revokeLocked: !!lockedLoanId, lockedLoanId }; }) };
   });
   r.post('/api/approvals', (c) => {
     const u = S.requireUser(c);
@@ -662,6 +663,8 @@ module.exports = (r) => {
   r.post('/api/approvals/:id/revoke', (c) => {
     const u = S.requireUser(c);
     const a = q.get('SELECT * FROM approvals WHERE id = ? AND user_id = ? AND revoked_at IS NULL', c.params.id, u.id); if (!a) fail(404, 'Approval not found');
+    const lockedLoan = require('../loans').revokeLocked(a);
+    if (lockedLoan) fail(423, `This approval secures loan #${lockedLoan}. It can't be revoked in NECTRA until the loan is repaid.`);
     const { signature, simulated } = sigOrSim(c.body);
     q.run('UPDATE approvals SET revoked_at = ? WHERE id = ?', now(), a.id);
     recordTx(u.id, { type: 'Approval', token: a.token, amount: 0, status: simulated || a.family !== 'solana' ? 'confirmed' : 'confirming', confirmations: simulated ? 32 : 0, signature, simulated, note: `Revoked ${a.spender}` });

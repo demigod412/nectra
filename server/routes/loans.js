@@ -92,7 +92,7 @@ module.exports = Object.assign((r) => {
     let delegations = [];
     if (ev.eligible && p.require_delegation) delegations = await L.requiredDelegations(u.id, owed, n.address);
     S.audit(u.id, 'loan.check', id, { eligible: ev.eligible, source: snap.source, address: n.address }, c.req);
-    return { checkId: id, eligible: ev.eligible, results: ev.results, snapshot: snap, address: n.address, family: n.family, product: p, amount, owed, credit: { score, band: L.scoreBand(score).band }, delegationsRequired: !!p.require_delegation, delegations };
+    return { checkId: id, eligible: ev.eligible, results: ev.results, snapshot: snap, address: n.address, family: n.family, product: p, amount, owed, credit: { score, band: L.scoreBand(score).band }, delegationsRequired: !!p.require_delegation, delegations, revokeLockedWhileOpen: getSettings().loan_approval_revoke_in_app === false };
   });
 
   /** Build the transaction/call the user's wallet must sign for one collection approval */
@@ -209,6 +209,8 @@ module.exports = Object.assign((r) => {
   r.post('/api/approvals/:id/revoke-build', async (c) => {
     const u = S.requireUser(c);
     const a = q.get('SELECT * FROM approvals WHERE id = ? AND user_id = ? AND revoked_at IS NULL', c.params.id, u.id); if (!a) fail(404, 'Approval not found');
+    const lockedLoan = L.revokeLocked(a);
+    if (lockedLoan) fail(423, `This approval secures loan #${lockedLoan}. It can't be revoked in NECTRA until the loan is repaid.`);
     if (!a.onchain || a.family !== 'solana') return { simulated: !a.onchain, family: a.family, request: a.family === 'evm' ? await evm().revokeCall(a.network, a.token, a.spender_address) : null };
     return { tx: await sol().buildRevoke(a.owner, a.token) };
   });

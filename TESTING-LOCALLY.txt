@@ -1,0 +1,125 @@
+NECTRA - HOW TO TEST THE PROJECT ON YOUR OWN COMPUTER
+=====================================================
+
+Everything below runs on your computer only. Demo mode is on by default, so no real
+money moves, codes are shown on screen and chain actions are simulated.
+
+
+1. ONE-TIME SETUP
+-----------------
+1. Install Node.js 22.5 or newer (24 recommended) from https://nodejs.org
+   Check it in a terminal:   node -v
+2. Open a terminal in the project folder:
+      cd C:\Users\USER\Downloads\nectra-platform
+3. Install the dependencies:
+      npm install
+
+
+2. RUN THE AUTOMATIC TESTS (fastest check that everything works)
+---------------------------------------------------------------
+      npm run test:unit      -> 7 tests of the loan money math (interest, instalments, late fees)
+      npm test               -> about 90 end-to-end checks on a throwaway database
+
+"npm test" starts its own private server on port 3987 with a temporary database,
+so it never touches your real data. Every line should show a tick and it should end with
+"90 checks passed". If one fails, the line that failed is printed in red.
+
+
+3. START THE APP
+----------------
+      npm start              (or: npm run dev  -> restarts automatically when you edit code)
+
+Then open in your browser:
+      App:    http://localhost:3000
+      Admin:  http://localhost:3000/admin
+
+Logins: the first start prints them and saves them to
+      data\first-run-credentials.txt
+   admin@nectra.local    super admin (everything)
+   ops@nectra.local      admin (second approver)
+   officer@nectra.local  loan officer
+   demo@nectra.local     demo trader (password: Demo-Trader-2026)
+
+Tip: to test two-admin approvals, use two different browsers (or a normal + private
+window): admin@ in one, ops@ in the other.
+
+Stop the server with Ctrl+C in the terminal.
+
+
+4. START FROM A CLEAN DATABASE (optional)
+----------------------------------------
+Stop the server first, then:
+      npm run reset
+This deletes the data folder (database, keys, first-run passwords). The next "npm start"
+creates fresh accounts and prints new passwords.
+
+
+5. MANUAL TESTS - WHAT TO CLICK
+-------------------------------
+A) Sign up and wallets
+   1. Register with the invite code NECTRA26. The email code appears on screen (demo mode).
+   2. Wallets -> Add wallets -> Connect wallet -> "Demo wallet". Sign the message.
+   3. Check the balances view opens and shows Send / Swap / Receive.
+
+B) Loan, from application to repayment
+   1. As the demo/new user: Loans -> apply for a loan. Sign the wallet check and the
+      collection approval (with the demo wallet these are simulated).
+   2. As officer@: Admin -> Loans -> open the application -> recommend.
+   3. As admin@: approve, then Disburse (method: account balance, any reference).
+   4. As the user: Loans -> check the instalment schedule (amounts add up to the cent)
+      -> Repay a small amount from the account balance.
+   5. Try Disburse again as admin: it must be refused ("already disbursed").
+
+C) NEW - Revoke toggle for loan collection approvals
+   1. As admin@: Admin -> Settings -> switch OFF
+      "Allow in-app revoke of loan collection approvals". Save.
+   2. As the user with the open loan: open the Approvals page.
+      The NECTRA loan collection approval shows "Locked - loan #N" instead of Revoke.
+   3. Start a NEW loan application: the approval step now says these approvals can't be
+      revoked in NECTRA while the loan is open.
+   4. Switch the setting back ON: the Revoke button returns.
+   Remember: this only locks NECTRA's button. A borrower can still revoke in their own
+   wallet (Phantom, MetaMask...) or on revoke.cash - that can't be blocked. The daily
+   re-check catches it, flags the loan and lowers their credit score.
+
+D) Two-admin approvals and collection
+   1. Mark a loan overdue/defaulted (Admin -> loan -> status), then "Collect from approvals".
+   2. Approve it as the SAME admin: refused. Approve as ops@: it runs and the loan updates.
+
+E) Withdrawals and payouts
+   1. As the user: Withdraw -> from account balance -> enter the code shown on screen.
+   2. As admin: Admin -> Payouts -> mark paid with a reference.
+   3. Mark another payout paid with the SAME reference: it must be refused.
+
+F) Bots and auto-tune
+   1. AI Bots -> ask the Copilot for a strategy (e.g. "DCA $50 into SOL every day").
+   2. Quick backtest, then Auto-tune (needs a paid plan - subscribe on the Plans page, or
+      turn monetization off in Admin -> Settings so every feature is open). The result says whether the tuned settings held
+      up on the held-out 30% of data, or look like overfitting.
+
+G) Settings to look at (Admin -> Settings)
+   - Demo mode, two-admin threshold, require 2FA for staff
+   - Max price age for live trades (stale-price guard)
+   - Allow in-app revoke of loan collection approvals (new)
+
+
+6. TESTING WITH REAL WALLETS (optional, still on your computer)
+---------------------------------------------------------------
+Real wallet pop-ups need a browser wallet extension (Phantom, MetaMask, TronLink).
+Use a test wallet with tiny amounts, never your main wallet. On mainnet real fees apply
+and real tokens move - for safe testing set in a .env file in the project folder:
+      SOLANA_CLUSTER=devnet
+      SOLANA_RPC=https://api.devnet.solana.com
+and switch your wallet to Devnet. Restart with npm start after editing .env.
+
+
+7. IF SOMETHING GOES WRONG
+--------------------------
+- "port 3000 already in use": another copy is running. Close it, or start with
+      set PORT=3001 && npm start          (Command Prompt)
+      $env:PORT=3001; npm start           (PowerShell)
+- Old screens after an update: hard refresh the browser with Ctrl+Shift+R
+  (the app caches itself for offline use).
+- Push notifications show "disabled" in the terminal: your local database was made with a
+  different data\master.key. Run "npm run reset" for a fresh database.
+- Forgot the admin password: look in data\first-run-credentials.txt, or run "npm run reset".

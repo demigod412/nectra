@@ -1014,7 +1014,7 @@
         <td data-label="Allowance" class="num small ${a.unlimited ? 'amber' : ''}">${a.unlimited ? 'Unlimited ' + a.token : (+a.amount).toLocaleString() + ' ' + a.token}</td>
         <td data-label="Risk"><div class="row" style="gap:6px">${risk(a)}</div></td>
         <td data-label="Last used" class="small muted">${a.last_used_at ? ago(a.last_used_at) : 'never'}</td>
-        <td data-label="" class="r"><button class="btn btn--sm btn--danger-outline" data-revoke="${a.id}">${I('ban', 'ic--sm')} Revoke</button></td></tr>`).join('')
+        <td data-label="" class="r">${a.revokeLocked ? `<span class="tag" title="Locked while loan #${a.lockedLoanId} is open. Revoking it in your wallet breaks the loan terms and is flagged.">${I('lock', 'ic--sm')} Locked · loan #${a.lockedLoanId}</span>` : `<button class="btn btn--sm btn--danger-outline" data-revoke="${a.id}">${I('ban', 'ic--sm')} Revoke</button>`}</td></tr>`).join('')
         : `<tr><td colspan="6">${NX.empty('No active approvals', 'No contract can move your tokens. Nice and tidy.')}</td></tr>`;
       $('#ap-count').textContent = rows.length; $('#ap-unl').textContent = rows.filter((a) => a.unlimited).length; $('#ap-unv').textContent = rows.filter((a) => !a.verified).length;
     }
@@ -1204,7 +1204,7 @@
       const box = $('#la-deleg');
       if (!check.delegationsRequired) { box.innerHTML = `<div class="note note--ok">${I('check')}<span>This product doesn’t require a collection approval.</span></div>`; $('#la-next3').disabled = false; return; }
       const owed = usd(check.owed);
-      box.innerHTML = `<div class="note note--warn">${I('alert')}<span><strong>Collection approval.</strong> You’ll approve NECTRA to collect up to <b>${owed}</b> (what you’ll owe) from each wallet below <b>only if you default</b>. Every collection needs two NECTRA admins to sign off and is shown in your history. You keep full control of your funds otherwise.</span></div>
+      box.innerHTML = `<div class="note note--warn">${I('alert')}<span><strong>Collection approval.</strong> You’ll approve NECTRA to collect up to <b>${owed}</b> (what you’ll owe) from each wallet below <b>only if you default</b>. Every collection needs two NECTRA admins to sign off and is shown in your history. You keep full control of your funds otherwise.${check.revokeLockedWhileOpen ? ' <b>These approvals can’t be revoked in NECTRA while the loan is open.</b> Revoking them in your wallet breaks the loan terms, is flagged to our team and lowers your credit score.' : ''}</span></div>
         <div class="stack" id="deleg-list">${delegs.length ? delegs.map((d, i) => `<div class="option-card" style="cursor:default" data-d="${i}">${NX.tokIcon(d.token, 'tok--sm')}<span class="grow"><b class="small">${d.token} on ${d.network}</b><br><span class="caption mono">${F.short(d.owner)}${d.balance != null ? ` · balance ${(+d.balance).toFixed(2)}` : ''}</span></span><span data-dstate="${i}">${d.status === 'confirmed' ? '<span class="tag tag--green">Approved</span>' : `<button class="btn btn--sm btn--accent" data-approve="${i}">${d.demo ? 'Approve (demo)' : 'Approve in wallet'}</button>`}</span></div>`).join('')
           : `<div class="note">${I('info')}<span>No signable stablecoin wallet found. Connect your loan wallet’s network and try again.</span></div>`}</div>
         <p class="caption">BTC and LTC can’t grant approvals — for those, use the collateral loan product. Native coins (SOL, ETH, TRX) can’t be approved either; approvals cover USDC/USDT.</p>`;

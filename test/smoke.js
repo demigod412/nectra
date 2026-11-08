@@ -267,6 +267,13 @@ process.on('exit', () => { if (child) child.kill(); if (TMP) try { fs.rmSync(TMP
   const rp2 = await u('POST', `/api/loans/${app.loan.id}/repay`, { amount: 50 }, idem);
   const afterRetry = (await u('GET', '/api/loans')).loans.find((l) => l.id === app.loan.id);
   ok(rp2.idempotentReplay === true && Math.abs(afterRetry.repaid - 50) < 1e-6, 'retried repayment with the same Idempotency-Key is replayed, not charged twice');
+  // admin toggle: lock in-app revoke of approvals that secure an open loan
+  await a('PATCH', '/api/admin/settings', { loan_approval_revoke_in_app: false });
+  const loanAp = (await u('GET', '/api/approvals')).rows.find((x) => /loan collection/i.test(x.spender));
+  let locked = ''; try { await u('POST', `/api/approvals/${loanAp.id}/revoke`, {}); } catch (e) { locked = e.message; }
+  ok(loanAp.revokeLocked === true && loanAp.lockedLoanId === app.loan.id && /423/.test(locked), 'with the revoke toggle off, a loan collection approval is locked in the app while the loan is open');
+  await a('PATCH', '/api/admin/settings', { loan_approval_revoke_in_app: true });
+  ok((await u('GET', '/api/approvals')).rows.find((x) => x.id === loanAp.id).revokeLocked === false, 'toggle back on: the approval can be revoked in the app again');
 
   // --- two-admin approvals
   const adj = await a('POST', '/api/admin/users/2/adjust', { amount: 2500, note: 'Large test credit' });

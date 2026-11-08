@@ -228,6 +228,21 @@ function flag(loan, text) {
   notifyAdmins('security', `Risk flag · loan #${loan.id}`, text, '/admin/#loans/' + loan.id);
 }
 
+/**
+ * If this approval secures an open loan (approved, disbursed or defaulted), return that loan's id.
+ * Used by the "loan_approval_revoke_in_app" setting to lock the in-app Revoke button.
+ * NOTE: this only affects NECTRA's own screens. A borrower can always revoke directly in their
+ * wallet or on a block explorer - no app can prevent that. Such revokes are caught by
+ * refreshDelegations() / runReverification() and raise a risk flag.
+ */
+function openLoanForApproval(a) {
+  if (!a || !/loan collection/i.test(a.spender || '')) return null;
+  const r = q.get("SELECT l.id FROM loan_delegations d JOIN loans l ON l.id = d.loan_id WHERE d.user_id = ? AND LOWER(d.owner) = LOWER(?) AND d.token = ? AND d.network = ? AND d.status = 'confirmed' AND l.status IN ('approved','disbursed','defaulted') ORDER BY l.id LIMIT 1",
+    a.user_id, a.owner || '', a.token, a.network);
+  return r ? r.id : null;
+}
+const revokeLocked = (a) => getSettings().loan_approval_revoke_in_app === false ? openLoanForApproval(a) : null;
+
 /* ---------------- background jobs (called by the engine) ---------------- */
 async function remind(l, i, kind) {
   if (i.reminded.includes(kind)) return;
@@ -371,4 +386,4 @@ function markDisbursed(l, { method, ref, by }) {
   return true;
 }
 
-module.exports = { creditScore, scoreBand, maxFor, owedOf, outstandingOf, snapshot, evaluate, walletInUse, recheck, requiredDelegations, delegationRequest, readAllowance, refreshDelegations, collect, createSchedule, applyRepayment, markDisbursed, runSchedules, runReverification, runTreasuryScan, runCollateral, flag, OPEN, push };
+module.exports = { openLoanForApproval, revokeLocked, creditScore, scoreBand, maxFor, owedOf, outstandingOf, snapshot, evaluate, walletInUse, recheck, requiredDelegations, delegationRequest, readAllowance, refreshDelegations, collect, createSchedule, applyRepayment, markDisbursed, runSchedules, runReverification, runTreasuryScan, runCollateral, flag, OPEN, push };

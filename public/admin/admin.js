@@ -609,6 +609,7 @@
       ${row('treasury_tron', 'Treasury — Tron', 'Receives USDT (TRC-20) repayments.', 'text')}
       ${row('live_bot_max_usd', 'Live bot funding cap (USD)', 'Maximum a user should fund a single live bot with.', 'num')}
       ${row('live_price_max_age_sec', 'Max price age for live trades (seconds)', 'Stale-price guard: live bots skip trading when a token’s real price is older than this, or the feed is simulated. Admins are alerted when it trips.', 'num')}
+      ${row('loan_approval_revoke_in_app', 'Allow in-app revoke of loan collection approvals', 'Off: the Revoke button in NECTRA is locked for approvals that secure an approved, active or defaulted loan, until it is repaid. Borrowers can STILL revoke directly in their wallet - no app can block that - which raises a risk flag and lowers their credit score. Approvals not tied to an open loan can always be revoked. Disclose this in your loan terms.')}
       ${row('ai_copilot', 'AI Copilot (Claude)', 'Use Claude to parse strategies when ANTHROPIC_API_KEY is set; otherwise the rule-based parser is used.')}
       <h3 class="card__title mt-24">Monetization & compliance</h3>
       ${row('monetization_enabled', 'Subscription plans (monetization)', 'Master switch. When off, the Plans page and all plan limits are hidden and every feature is available to everyone — no subscriptions, no gating.')}
