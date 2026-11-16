@@ -173,8 +173,14 @@ if [ "$REPO_SOURCE" = "LOCAL" ]; then
     echo "Copying files from $SRC_DIR to $INSTALL_DIR..."
     rm -rf "$INSTALL_DIR"
     mkdir -p "$INSTALL_DIR"
-    cp -r "$SRC_DIR"/* "$INSTALL_DIR"/
-    cp "$SRC_DIR"/.env* "$INSTALL_DIR"/ 2>/dev/null || true
+    cp -a "$SRC_DIR"/. "$INSTALL_DIR"/
+  fi
+  # Ensure git repository is initialized for future seamless updates
+  if [ ! -d "$INSTALL_DIR/.git" ]; then
+    cd "$INSTALL_DIR"
+    git init
+    git remote add origin "$GIT_REPO" || git remote set-url origin "$GIT_REPO"
+    git branch -M main || true
   fi
 else
   if [ -d "$INSTALL_DIR/.git" ]; then

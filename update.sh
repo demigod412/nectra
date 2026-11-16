@@ -28,10 +28,19 @@ fi
 cd "$INSTALL_DIR"
 echo -e "${BOLD}[1/4] Operating in: ${INSTALL_DIR}${NC}"
 
+# Auto-repair git configuration if .git directory was omitted
+if [ ! -d "$INSTALL_DIR/.git" ]; then
+  echo -e "${YELLOW}[!] Git metadata missing. Initializing git link to GitHub repository...${NC}"
+  git init
+  git remote add origin https://github.com/demigod412/nectra.git 2>/dev/null || git remote set-url origin https://github.com/demigod412/nectra.git
+  git branch -M main || true
+fi
+
 # 2. Pull latest code from GitHub main branch
 echo -e "\n${BOLD}[2/4] Fetching latest commits from GitHub...${NC}"
-git fetch origin
+git fetch origin main
 git reset --hard origin/main
+git branch --set-upstream-to=origin/main main || true
 echo -e "${GREEN}[✓] Successfully updated to latest commit $(git rev-parse --short HEAD).${NC}"
 
 # 3. Update production dependencies
