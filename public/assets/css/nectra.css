@@ -888,8 +888,9 @@ body.copilot-open .copilot { transform: none; visibility: visible; transition: t
 
 /* stagger entrance */
 .stagger > * { animation: rise .5s var(--ease) both; animation-delay: calc(var(--i, 0) * 40ms); }
-.reveal { opacity: 0; transform: translateY(16px); transition: opacity .7s var(--ease), transform .7s var(--ease); }
-.reveal.is-in { opacity: 1; transform: none; }
+@keyframes revealSafety { to { opacity: 1; transform: none; } }
+.reveal { opacity: 0; transform: translateY(16px); transition: opacity .7s var(--ease), transform .7s var(--ease); animation: revealSafety .1s 1s forwards; }
+.reveal.is-in { opacity: 1; transform: none; animation: none; }
 .flash-up { animation: flashUp 1s var(--ease); border-radius: 6px; }
 .flash-down { animation: flashDown 1s var(--ease); border-radius: 6px; }
 .spin { animation: spin .8s linear infinite; }

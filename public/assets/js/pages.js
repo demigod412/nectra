@@ -213,39 +213,45 @@
     const BASE_PORTFOLIO = getDynamicPortfolioBase();
     let liveBal = BASE_PORTFOLIO;
 
+    // Immediately show dynamic live balance so it is never stuck at $0.00
+    if (val) {
+      val.textContent = '$' + liveBal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
     const draw = async () => {
       try {
         const r = await NX.get('/api/market/series?sym=SOL&range=1D');
-        const data = r.points.map((p) => (p.p / r.points[0].p) * BASE_PORTFOLIO);
+        const data = (r && r.points && r.points.length)
+          ? r.points.map((p) => (p.p / r.points[0].p) * BASE_PORTFOLIO)
+          : [BASE_PORTFOLIO * 0.98, BASE_PORTFOLIO * 0.99, BASE_PORTFOLIO * 1.01, BASE_PORTFOLIO * 1.03, BASE_PORTFOLIO * 1.025, liveBal];
         liveBal = data[data.length - 1];
-        if (!el._render) {
+        if (el && !el._render) {
           NX.charts.line(el, data, { height: 180, axis: false, label: 'Live Autonomous Execution Portfolio' });
-        } else {
+        } else if (el) {
           el._data = data;
           NX.charts.line(el, data, { height: 180, axis: false });
         }
-        NX.countUp(val, liveBal, { flash: true });
+        if (val) NX.countUp(val, liveBal, { flash: true });
       } catch (e) {
-        if (!val._v) NX.countUp(val, BASE_PORTFOLIO, { flash: true });
+        if (val && !val._v) NX.countUp(val, BASE_PORTFOLIO, { flash: true });
       }
     };
 
-    NX.whenVisible(el, () => {
-      draw();
-      setInterval(() => !document.hidden && draw(), 20000);
-      // High-frequency live portfolio tick animation (proportional to portfolio size)
-      setInterval(() => {
-        if (document.hidden) return;
-        const variance = Math.max(45, liveBal * 0.00035);
-        const tick = (Math.random() * variance * 2 - variance * 0.85);
-        liveBal = Math.max(liveBal + tick, 280000);
-        if (val) {
-          val.textContent = '$' + liveBal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-          val.classList.add(tick >= 0 ? 'color-up' : 'color-down');
-          setTimeout(() => val.classList.remove('color-up', 'color-down'), 450);
-        }
-      }, 1600);
-    });
+    // Draw immediately and keep ticking
+    draw();
+    setInterval(() => !document.hidden && draw(), 20000);
+    // High-frequency live portfolio tick animation (proportional to portfolio size)
+    setInterval(() => {
+      if (document.hidden) return;
+      const variance = Math.max(45, liveBal * 0.00035);
+      const tick = (Math.random() * variance * 2 - variance * 0.85);
+      liveBal = Math.max(liveBal + tick, 280000);
+      if (val) {
+        val.textContent = '$' + liveBal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        val.classList.add(tick >= 0 ? 'color-up' : 'color-down');
+        setTimeout(() => val.classList.remove('color-up', 'color-down'), 450);
+      }
+    }, 1600);
 
     const ev = $('#hero-events');
     const scale = Math.max(1, BASE_PORTFOLIO / 285000);
@@ -298,21 +304,6 @@
         gridRows.forEach((r, i) => r.classList.toggle('active', i === gIdx));
         gIdx = (gIdx + 1) % gridRows.length;
       }, 2000);
-    }
-  };
-      const row = document.createElement('div');
-      row.className = 'mock__event';
-      row.style.transition = 'all 0.3s ease';
-      row.innerHTML = `<span class="tag ${tagCls} mono" style="font-size:10px;padding:2px 6px;font-weight:700">${item.dir}</span>
-        <span class="grow small"><b>${item.amt}</b> @ ${item.px} &middot; <span class="mono" style="color:var(--green,#22c55e);font-weight:600">${item.pnl}</span></span>
-        <span class="faint tiny mono">${item.venue} &middot; ${item.ms}</span>`;
-      ev.prepend(row);
-      while (ev.children.length > 3) ev.lastElementChild.remove();
-    };
-    if (ev) {
-      ev.innerHTML = '';
-      push(); push(); push();
-      setInterval(() => !document.hidden && push(), 2600);
     }
   };
 
@@ -1790,4 +1781,8 @@
 })();
 
 /* Boot after all modules are loaded */
-document.addEventListener('DOMContentLoaded', () => window.NX.boot());
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => window.NX && window.NX.boot && window.NX.boot());
+} else {
+  window.NX && window.NX.boot && window.NX.boot();
+}

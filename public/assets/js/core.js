@@ -912,8 +912,19 @@
   NX.initReveal = () => {
     const els = $$('.reveal');
     if (!('IntersectionObserver' in window) || NX.reduced) { els.forEach((e) => e.classList.add('is-in')); return; }
-    const io = new IntersectionObserver((ents) => ents.forEach((en) => { if (en.isIntersecting) { en.target.classList.add('is-in'); io.unobserve(en.target); } }), { threshold: 0.15 });
-    els.forEach((e) => io.observe(e));
+    // Immediately mark visible elements
+    els.forEach((e) => {
+      const rect = e.getBoundingClientRect();
+      if (rect.top < (window.innerHeight || document.documentElement.clientHeight) + 80) {
+        e.classList.add('is-in');
+      }
+    });
+    const io = new IntersectionObserver((ents) => ents.forEach((en) => {
+      if (en.isIntersecting) { en.target.classList.add('is-in'); io.unobserve(en.target); }
+    }), { threshold: 0.05, rootMargin: '0px 0px 60px 0px' });
+    els.forEach((e) => { if (!e.classList.contains('is-in')) io.observe(e); });
+    // Safety fallback: reveal all elements so no content can ever be stuck hidden
+    setTimeout(() => els.forEach((e) => e.classList.add('is-in')), 900);
   };
 
   /* ---------- BOOT ---------- */
