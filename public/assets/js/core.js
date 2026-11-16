@@ -101,22 +101,121 @@
 
   /* ---------- BRANDING & WHITE-LABEL ---------- */
   NX.brand = NX.store.get('brand', { name: 'NECTRA', logo: '', favicon: 'assets/favicon.svg' });
+  NX.brandName = () => (NX.brand && NX.brand.name) || 'NECTRA';
+
+  function walkAndReplace(node, brandName, prevName) {
+    if (!node || !brandName) return;
+    if (brandName === 'NECTRA' && (!prevName || prevName === 'NECTRA')) return;
+    const tag = (node.nodeName || '').toLowerCase();
+    if (['script', 'style', 'code', 'pre', 'noscript', 'textarea'].includes(tag)) return;
+
+    if (node.nodeType === 3) { // TEXT_NODE
+      let txt = node.nodeValue;
+      let changed = false;
+      if (brandName !== 'NECTRA' && /nectra/i.test(txt)) {
+        txt = txt.replace(/nectra/gi, (match) => {
+          if (match === 'NECTRA') return brandName.toUpperCase();
+          if (match === 'nectra') return brandName.toLowerCase();
+          return brandName;
+        });
+        changed = true;
+      }
+      if (prevName && prevName !== brandName && prevName !== 'NECTRA' && txt.includes(prevName)) {
+        txt = txt.split(prevName).join(brandName);
+        changed = true;
+      }
+      if (changed) node.nodeValue = txt;
+      return;
+    }
+
+    if (node.nodeType === 1) { // ELEMENT_NODE
+      const attrs = ['title', 'aria-label', 'placeholder', 'data-tip', 'alt', 'value'];
+      for (let i = 0; i < attrs.length; i++) {
+        const a = attrs[i];
+        if (node.hasAttribute(a)) {
+          let val = node.getAttribute(a);
+          let ch = false;
+          if (brandName !== 'NECTRA' && /nectra/i.test(val)) {
+            val = val.replace(/nectra/gi, (match) => {
+              if (match === 'NECTRA') return brandName.toUpperCase();
+              if (match === 'nectra') return brandName.toLowerCase();
+              return brandName;
+            });
+            ch = true;
+          }
+          if (prevName && prevName !== brandName && prevName !== 'NECTRA' && val.includes(prevName)) {
+            val = val.split(prevName).join(brandName);
+            ch = true;
+          }
+          if (ch) node.setAttribute(a, val);
+        }
+      }
+    }
+
+    let child = node.firstChild;
+    while (child) {
+      walkAndReplace(child, brandName, prevName);
+      child = child.nextSibling;
+    }
+  }
+  NX.walkAndReplace = walkAndReplace;
+
+  let brandObserver = null;
+  function observeBranding(brandName, prevName) {
+    if (!brandName || (brandName === 'NECTRA' && (!prevName || prevName === 'NECTRA'))) {
+      if (brandObserver) { brandObserver.disconnect(); brandObserver = null; }
+      return;
+    }
+    if (brandObserver) brandObserver.disconnect();
+    if (typeof MutationObserver === 'undefined') return;
+
+    brandObserver = new MutationObserver((mutations) => {
+      for (let i = 0; i < mutations.length; i++) {
+        const m = mutations[i];
+        if (m.type === 'childList') {
+          m.addedNodes.forEach((n) => walkAndReplace(n, brandName, prevName));
+        } else if (m.type === 'characterData') {
+          walkAndReplace(m.target, brandName, prevName);
+        }
+      }
+    });
+
+    brandObserver.observe(document.body || document.documentElement, {
+      childList: true,
+      subtree: true,
+      characterData: true
+    });
+  }
+
   NX.applyBranding = (b) => {
     if (!b) return;
+    const prevName = (NX.brand && NX.brand.name) || 'NECTRA';
     const name = b.name || 'NECTRA';
     NX.brand = b;
     NX.store.set('brand', b);
 
-    // Update document title
+    // 1. Update document title
     if (document.title) {
       if (document.title.includes('NECTRA')) {
         document.title = document.title.replace(/NECTRA/g, name);
+      } else if (prevName && prevName !== name && document.title.includes(prevName)) {
+        document.title = document.title.split(prevName).join(name);
       }
     }
 
-    // Update favicon
+    // 2. Update meta description
+    const metaDesc = document.querySelector('meta[name="description"]');
+    if (metaDesc && metaDesc.content) {
+      if (metaDesc.content.includes('NECTRA')) {
+        metaDesc.content = metaDesc.content.replace(/NECTRA/g, name);
+      } else if (prevName && prevName !== name && metaDesc.content.includes(prevName)) {
+        metaDesc.content = metaDesc.content.split(prevName).join(name);
+      }
+    }
+
+    // 3. Update favicon
     if (b.favicon) {
-      let fav = $('link[rel="icon"]');
+      let fav = document.querySelector('link[rel="icon"]');
       if (!fav) {
         fav = document.createElement('link');
         fav.rel = 'icon';
@@ -125,24 +224,24 @@
       fav.href = b.favicon;
     }
 
-    // Update brand text in header, sidebar, footer
-    $$('.brand__name, [data-brand]').forEach((el) => { el.textContent = name; });
-    $$('a.brand').forEach((el) => { el.setAttribute('aria-label', `${name} home`); });
+    // 4. Update brand elements directly
+    document.querySelectorAll('.brand__name, [data-brand]').forEach((el) => { el.textContent = name; });
+    document.querySelectorAll('a.brand').forEach((el) => { el.setAttribute('aria-label', `${name} home`); });
 
-    // Update mentions in text/notes
-    $$('.seed-note, .auth__lead, footer, .brand-text').forEach((el) => {
-      if (el.innerHTML && el.innerHTML.includes('NECTRA')) {
-        el.innerHTML = el.innerHTML.replace(/NECTRA/g, NX.esc(name));
-      }
-    });
+    // 5. Deep walk and replace across the entire DOM tree
+    walkAndReplace(document.body, name, prevName);
+    walkAndReplace(document.head, name, prevName);
 
-    // Update logos if custom logo provided
+    // 6. Keep observing any dynamically created DOM nodes
+    observeBranding(name, prevName);
+
+    // 7. Update logos if custom logo provided
     if (b.logo) {
-      $$('[data-logo]').forEach((el) => {
+      document.querySelectorAll('[data-logo]').forEach((el) => {
         const sz = +el.dataset.logo || 28;
         el.outerHTML = `<img src="${NX.esc(b.logo)}" class="logo ${el.className || ''}" style="width:${sz}px;height:${sz}px;object-fit:contain;" alt="${NX.esc(name)}" />`;
       });
-      $$('.brand svg.logo, .auth__card svg.logo').forEach((el) => {
+      document.querySelectorAll('.brand svg.logo, .auth__card svg.logo').forEach((el) => {
         const sz = el.getAttribute('width') || 28;
         const img = document.createElement('img');
         img.src = b.logo;
@@ -155,7 +254,15 @@
   };
 
   // Immediate cached branding
-  try { if (NX.brand && (NX.brand.name !== 'NECTRA' || NX.brand.logo)) NX.applyBranding(NX.brand); } catch (e) {}
+  try {
+    if (NX.brand && (NX.brand.name !== 'NECTRA' || NX.brand.logo)) {
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => NX.applyBranding(NX.brand));
+      } else {
+        NX.applyBranding(NX.brand);
+      }
+    }
+  } catch (e) {}
 
   /* ---------- LOGO (custom image or 5-petal blossom SVG fallback) ---------- */
   let logoN = 0;
@@ -466,25 +573,26 @@
     const unread = NX.unread();
     const st = NX.data.status;
     const statusTip = st.level === 'green' ? 'All systems normal' : st.label;
+    const bName = NX.brandName();
 
     // Sidebar (tablet rail / desktop labelled)
     const side = document.createElement('aside');
     side.className = 'sidebar';
     side.setAttribute('aria-label', 'Primary');
     side.innerHTML = `
-      <a class="brand" href="dashboard.html" aria-label="NECTRA home">${NX.logo(30)}<span class="brand__name">NECTRA</span></a>
+      <a class="brand" href="dashboard.html" aria-label="${NX.esc(bName)} home">${NX.logo(30)}<span class="brand__name">${NX.esc(bName)}</span></a>
       <button class="nav-link sidebar__collapse" data-rail-toggle aria-label="Expand navigation" aria-expanded="false">${NX.icon('menu')}<span>Collapse</span></button>
       <nav>${visibleNav().map((n) => n.g ? `<div class="nav-group">${n.g}</div>` : `<a class="nav-link" href="${n.id}.html" ${n.id === page ? 'aria-current="page"' : ''}>${NX.icon(n.icon)}<span>${n.label}</span>${n.badge && unread ? `<b class="nav-badge" data-unread>${unread}</b><i class="nav-dot" aria-hidden="true"></i>` : ''}</a>`).join('')}</nav>
       <div class="sidebar__foot">
         <div class="sidebar__card"><span class="tag tag--paper">${NX.icon('activity')} Paper trading</span><span>Bots simulate trades with mock funds until you switch to live.</span></div>
-        <div class="sidebar__card"><span class="seed-note">${NX.icon('shield')} Non-custodial</span><span>NECTRA will never ask for your seed phrase.</span></div>
+        <div class="sidebar__card"><span class="seed-note">${NX.icon('shield')} Non-custodial</span><span>${NX.esc(bName)} will never ask for your seed phrase.</span></div>
       </div>`;
 
     // Topbar
     const top = document.createElement('header');
     top.className = 'topbar';
     top.innerHTML = `
-      <a class="brand" href="dashboard.html" aria-label="NECTRA home">${NX.logo(28)}<span class="brand__name">NECTRA</span></a>
+      <a class="brand" href="dashboard.html" aria-label="${NX.esc(bName)} home">${NX.logo(28)}<span class="brand__name">${NX.esc(bName)}</span></a>
       <button class="search-trigger" data-palette aria-label="Search coins, wallets, bots (Ctrl+K)">${NX.icon('search', 'ic--sm')}<span>Search coins, wallets, bots…</span><kbd>${/Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl'} K</kbd></button>
       <div class="topbar__actions">
         <a class="status-btn" href="status.html" data-tip="${statusTip}" data-tip-pos="bottom" aria-label="System status: ${statusTip}"><span class="dot dot--${st.level} dot--pulse"></span></a>
@@ -850,5 +958,10 @@
     try { NX.pages && NX.pages[page] && (await NX.pages[page]()); } catch (e) { console.error(e); if (e.status !== 401) NX.toast(e.message || 'Something went wrong', { type: 'error' }); }
     NX.hydrateIcons();
     if (document.body.classList.contains('app') && document.body.classList.contains('copilot-open')) NX.initCopilotPanel && NX.initCopilotPanel();
+    const curBrand = NX.brandName();
+    if (curBrand && curBrand !== 'NECTRA') {
+      walkAndReplace(document.body, curBrand, 'NECTRA');
+      walkAndReplace(document.head, curBrand, 'NECTRA');
+    }
   };
 })();

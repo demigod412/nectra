@@ -45,7 +45,8 @@
       log.scrollTop = log.scrollHeight;
       return m;
     };
-    add(`<div class="msg__bubble">Hi! I’m your NECTRA Copilot. Tell me what you want in plain English — I’ll turn it into a strategy you can <b>review before anything runs</b>. Bots start in <b>paper trading</b>.</div>`, 'ai');
+    const bName = (window.NX && NX.brandName) ? NX.brandName() : 'NECTRA';
+    add(`<div class="msg__bubble">Hi! I’m your ${bName} Copilot. Tell me what you want in plain English — I’ll turn it into a strategy you can <b>review before anything runs</b>. Bots start in <b>paper trading</b>.</div>`, 'ai');
 
     const send = async (text) => {
       if (!text.trim()) return;

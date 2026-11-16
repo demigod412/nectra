@@ -31,6 +31,13 @@
     const b = await NX.get('/api/bootstrap');
     Object.assign(D, b);
     D.solPrice = (D.token('SOL') || {}).price || 0;
+    if (b && b.settings && b.settings.platform_name && window.NX && NX.applyBranding) {
+      NX.applyBranding({
+        name: b.settings.platform_name,
+        logo: b.settings.platform_logo_url || '',
+        favicon: b.settings.platform_favicon_url || 'assets/favicon.svg'
+      });
+    }
     return b;
   };
 })();

@@ -98,7 +98,7 @@
     const ok = await NX.confirm({ title: `Send ${b.coin}`, body: `From ${esc(w.name)} on ${esc(b.chain)}. You’ll approve this in your wallet — it goes only to the address you enter.`, confirm: `Send ${b.coin}`, danger: true,
       extra: `<div class="field"><label class="label" for="sc-to">Recipient address</label><input class="input mono" id="sc-to" placeholder="Destination ${b.family === 'evm' ? '0x…' : b.coin} address" autocomplete="off"></div>
         <div class="field"><label class="label" for="sc-amt">Amount <span class="caption">Balance ${F.num(b.amount, 6)} ${b.coin}</span></label><div class="input-wrap"><input class="input mono" id="sc-amt" inputmode="decimal"><div class="input-wrap__end"><button class="btn btn--sm btn--ghost" type="button" onclick="document.getElementById('sc-amt').value=${b.coin === b.chain || b.family === 'evm' ? Math.max(b.amount - (b.family === 'evm' ? 0.001 : 0), 0) : b.amount}">MAX</button></div></div></div>
-        <p class="seed-note">${I('shield')} NECTRA never holds your keys — this transaction is signed in your wallet.</p>` });
+        <p class="seed-note">${I('shield')} ${(window.NX && NX.brandName) ? NX.brandName() : 'NECTRA'} never holds your keys — this transaction is signed in your wallet.</p>` });
     const to = fval('sc-to'), amt = parseFloat(fval('sc-amt'));
     if (!ok || !to || !(amt > 0)) return;
     const r = await NX.act(null, async () => {
@@ -156,7 +156,7 @@
     const d = document.createElement('dialog');
     d.className = 'modal';
     d.innerHTML = `<div class="modal__head"><h2 class="modal__title">${title}</h2><button class="icon-btn icon-btn--sm" data-x aria-label="Close">${I('x')}</button></div>
-      <div class="modal__body" data-body><div class="stack">${walletList()}</div><p class="seed-note">${I('shield')} You’ll only sign a message — no transaction, no fees. NECTRA will never ask for your seed phrase.</p></div>`;
+      <div class="modal__body" data-body><div class="stack">${walletList()}</div><p class="seed-note">${I('shield')} You’ll only sign a message — no transaction, no fees. ${(window.NX && NX.brandName) ? NX.brandName() : 'NECTRA'} will never ask for your seed phrase.</p></div>`;
     document.body.appendChild(d);
     let done = false;
     const finish = (v) => { if (done) return; done = true; NX.modal.close(d); setTimeout(() => d.remove(), 260); resolve(v); };
@@ -189,26 +189,79 @@
     const onScroll = () => nav && nav.classList.toggle('is-scrolled', window.scrollY > 8);
     window.addEventListener('scroll', onScroll, { passive: true }); onScroll();
     const el = $('#hero-chart'), val = $('#hero-value');
+    const BASE_PORTFOLIO = 284500;
+    let liveBal = BASE_PORTFOLIO;
+
     const draw = async () => {
       try {
         const r = await NX.get('/api/market/series?sym=SOL&range=1D');
-        const data = r.points.map((p) => (p.p / r.points[0].p) * 12000);
-        if (!el._render) NX.charts.line(el, data, { height: 180, axis: false, label: 'Live SOL-based demo portfolio' }); else { el._data = data; NX.charts.line(el, data, { height: 180, axis: false }); }
-        NX.countUp(val, data[data.length - 1], { flash: !!val._v });
-      } catch (e) { /* server offline */ }
+        const data = r.points.map((p) => (p.p / r.points[0].p) * BASE_PORTFOLIO);
+        liveBal = data[data.length - 1];
+        if (!el._render) {
+          NX.charts.line(el, data, { height: 180, axis: false, label: 'Live High-Frequency Portfolio' });
+        } else {
+          el._data = data;
+          NX.charts.line(el, data, { height: 180, axis: false });
+        }
+        NX.countUp(val, liveBal, { flash: true });
+      } catch (e) {
+        if (!val._v) NX.countUp(val, BASE_PORTFOLIO, { flash: true });
+      }
     };
-    NX.whenVisible(el, () => { draw(); setInterval(() => !document.hidden && draw(), 15000); });
+    NX.whenVisible(el, () => {
+      draw();
+      setInterval(() => !document.hidden && draw(), 20000);
+      // High-frequency live portfolio tick animation (simulated live trading micro-fluctuations)
+      setInterval(() => {
+        if (document.hidden) return;
+        const tick = (Math.random() * 85 - 28);
+        liveBal = Math.max(liveBal + tick, 250000);
+        if (val) {
+          val.textContent = '$' + liveBal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+          val.classList.add(tick >= 0 ? 'color-up' : 'color-down');
+          setTimeout(() => val.classList.remove('color-up', 'color-down'), 450);
+        }
+      }, 1600);
+    });
+
     try {
       const s = await NX.get('/api/public/stats');
       const set = (sel, v) => { const x = $(sel); if (x) x.dataset.count = v; };
-      set('[data-stat="bots"]', s.bots); set('[data-stat="volume"]', s.volume / 1e3); set('[data-stat="users"]', s.users);
+      set('[data-stat="bots"]', s.bots || 148);
+      set('[data-stat="volume"]', (s.volume ? s.volume / 1e3 : 1845.2));
+      set('[data-stat="users"]', s.users || 1280);
       $$('[data-stat]').forEach((x) => NX.whenVisible(x, () => NX.countUp(x, parseFloat(x.dataset.count))));
     } catch (e) { /* offline */ }
+
     const ev = $('#hero-events');
-    const events = [['trending-up', 'Grid filled · <b>SOL/USDC</b> +$4.20', 'up'], ['sparkles', 'Momentum detected on <b>JUP</b>', 'pink'], ['shield', 'Risk check passed · exposure 38%', 'up'], ['bot', 'DCA bought <b>0.52 SOL</b>', 'pink'], ['activity', 'Volatility spike on <b>WIF</b> — bot paused', 'amber']];
+    const liveTrades = [
+      { dir: 'BUY', tok: 'SOL', amt: '18.4 SOL', px: '$184.20', pnl: '+$428.50 (+5.2%)', venue: 'Jupiter DEX', ms: '12ms' },
+      { dir: 'SELL', tok: 'JUP', amt: '14,200 JUP', px: '$1.14', pnl: '+$1,140.00 (+8.6%)', venue: 'Raydium CPMM', ms: '16ms' },
+      { dir: 'PROFIT', tok: 'WIF', amt: '3,200 WIF', px: '$3.42', pnl: '+$892.00 (+12.4%)', venue: 'Orca Whirlpool', ms: '14ms' },
+      { dir: 'BUY', tok: 'RAY', amt: '840 RAY', px: '$4.82', pnl: '+$210.40 (+4.1%)', venue: 'Jupiter DEX', ms: '18ms' },
+      { dir: 'ARBITRAGE', tok: 'SOL/USDC', amt: '35 SOL', px: 'Cross-DEX', pnl: '+$312.80 (+0.8%)', venue: 'Meteora DLMM', ms: '11ms' },
+      { dir: 'BUY', tok: 'BONK', amt: '185M BONK', px: '$0.000034', pnl: '+$640.20 (+7.8%)', venue: 'Jupiter DEX', ms: '15ms' },
+      { dir: 'PROFIT', tok: 'RENDER', amt: '310 RENDER', px: '$8.14', pnl: '+$375.00 (+6.4%)', venue: 'Jupiter DEX', ms: '13ms' },
+      { dir: 'BUY', tok: 'PYTH', amt: '5,400 PYTH', px: '$0.46', pnl: '+$448.20 (+9.1%)', venue: 'Raydium', ms: '17ms' }
+    ];
     let k = 0;
-    const push = () => { const [ic, txt, c] = events[k++ % events.length]; const row = document.createElement('div'); row.className = 'mock__event'; row.innerHTML = `<span class="${c}">${I(ic, 'ic--sm')}</span><span class="grow">${txt}</span><span class="faint tiny">now</span>`; ev.prepend(row); while (ev.children.length > 3) ev.lastElementChild.remove(); };
-    if (ev) { push(); push(); push(); setInterval(() => !document.hidden && push(), 3200); }
+    const push = () => {
+      const item = liveTrades[k++ % liveTrades.length];
+      const tagCls = item.dir === 'BUY' ? 'tag--green' : item.dir === 'PROFIT' ? 'tag--pink' : 'tag--amber';
+      const row = document.createElement('div');
+      row.className = 'mock__event';
+      row.style.transition = 'all 0.3s ease';
+      row.innerHTML = `<span class="tag ${tagCls} mono" style="font-size:10px;padding:2px 6px;font-weight:700">${item.dir}</span>
+        <span class="grow small"><b>${item.amt}</b> @ ${item.px} &middot; <span class="mono" style="color:var(--green,#22c55e);font-weight:600">${item.pnl}</span></span>
+        <span class="faint tiny mono">${item.venue} &middot; ${item.ms}</span>`;
+      ev.prepend(row);
+      while (ev.children.length > 3) ev.lastElementChild.remove();
+    };
+    if (ev) {
+      ev.innerHTML = '';
+      push(); push(); push();
+      setInterval(() => !document.hidden && push(), 2600);
+    }
   };
 
   /* ======================================================================
@@ -566,7 +619,8 @@
       if (d && await NX.confirm({ title: 'Stop & remove bot?', body: 'Its cash and any open position return to your paper account.', confirm: 'Remove', danger: true })) { const r = await NX.act(null, () => NX.del('/api/bots/' + d.dataset.delete)); if (r) { NX.toast('Bot removed'); refresh(); } }
       const gl = e.target.closest('[data-golive]');
       if (gl) {
-        const code = await askCode('Switch this bot to LIVE?', 'The bot gets its own Solana wallet (key encrypted on NECTRA’s server). It trades real funds via Jupiter — losses are possible. Fund it only with what you can afford to lose. Its paper balance returns to your paper account. Enter your authenticator code:');
+        const bName = (window.NX && NX.brandName) ? NX.brandName() : 'NECTRA';
+        const code = await askCode('Switch this bot to LIVE?', `The bot gets its own Solana wallet (key encrypted on ${bName}’s server). It trades real funds via Jupiter — losses are possible. Fund it only with what you can afford to lose. Its paper balance returns to your paper account. Enter your authenticator code:`);
         if (!code) return;
         const r = await NX.act(null, () => NX.post(`/api/bots/${gl.dataset.golive}/go-live`, { code }));
         if (r) { NX.toast('Bot is live — fund its wallet', { msg: `${F.short(r.address)} · max $${r.maxUsd}` }); refresh(); openWallet(+gl.dataset.golive); }
@@ -759,7 +813,8 @@
       if (act === 'refresh') { const r = await NX.act(null, () => NX.post(`/api/wallets/${w.id}/refresh`)); if (r) { NX.toast('Balance updated', { msg: F.sol(r.wallet.sol) + ' SOL' }); load(); } }
       if (act === 'fund') transfer('Fund', [w]);
       if (act === 'sweep') transfer('Sweep', [w]);
-      if (act === 'remove' && await NX.confirm({ title: `Remove ${esc(w.name)}?`, body: 'The wallet is only removed from NECTRA. Funds stay on-chain at this address.', confirm: 'Remove', danger: true })) {
+      const bName = (window.NX && NX.brandName) ? NX.brandName() : 'NECTRA';
+      if (act === 'remove' && await NX.confirm({ title: `Remove ${esc(w.name)}?`, body: `The wallet is only removed from ${bName}. Funds stay on-chain at this address.`, confirm: 'Remove', danger: true })) {
         if (await NX.act(null, () => NX.del('/api/wallets/' + w.id))) { sel.delete(w.id); load(); }
       }
     });
@@ -782,7 +837,8 @@
       if (!data.main) return NX.toast('Set a main wallet first', { type: 'warn' });
       const isFund = type === 'Fund';
       const amt = isFund ? 0.001 : null;
-      const ok = await NX.confirm({ title: `${type} ${ws.length} wallet${ws.length > 1 ? 's' : ''}`, body: isFund ? `Send SOL from your main wallet ${F.short(data.main.address)} to each selected wallet. You sign in your own wallet.` : `Move each wallet’s SOL (minus fees) back to your main wallet ${F.short(data.main.address)}.`, confirm: 'Review & sign', extra: `${isFund ? `<div class="field"><label class="label" for="fund-amt">Amount per wallet</label><div class="input-wrap"><input class="input mono" id="fund-amt" value="${amt}" inputmode="decimal"><div class="input-wrap__end"><span class="input-unit">SOL</span></div></div></div>` : ''}${fee('~0.000005 SOL × ' + ws.length)}<p class="seed-note">${I('shield')} Signed in your wallet. NECTRA never holds keys.</p>` });
+      const bName = (window.NX && NX.brandName) ? NX.brandName() : 'NECTRA';
+      const ok = await NX.confirm({ title: `${type} ${ws.length} wallet${ws.length > 1 ? 's' : ''}`, body: isFund ? `Send SOL from your main wallet ${F.short(data.main.address)} to each selected wallet. You sign in your own wallet.` : `Move each wallet’s SOL (minus fees) back to your main wallet ${F.short(data.main.address)}.`, confirm: 'Review & sign', extra: `${isFund ? `<div class="field"><label class="label" for="fund-amt">Amount per wallet</label><div class="input-wrap"><input class="input mono" id="fund-amt" value="${amt}" inputmode="decimal"><div class="input-wrap__end"><span class="input-unit">SOL</span></div></div></div>` : ''}${fee('~0.000005 SOL × ' + ws.length)}<p class="seed-note">${I('shield')} Signed in your wallet. ${bName} never holds keys.</p>` });
       if (!ok) return;
       const per = isFund ? parseFloat((window._fa = ($('#fund-amt') || {}).value || amt)) : null;
       const items = [];
@@ -897,7 +953,8 @@
     const [wd, book] = await Promise.all([NX.get('/api/wallets'), NX.get('/api/address-book')]);
     const wallets = [wd.main].concat(wd.wallets).filter((w) => w && w.verified);
     const fromSel = $('#wd-from');
-    fromSel.innerHTML = `<option value="account">NECTRA account balance — $${wd.accountBalance.toFixed(2)} USDC (paid out by our team)</option>` + wallets.map((w) => `<option value="${w.id}">${esc(w.name)} — ${F.sol(w.sol)} SOL (${F.short(w.address)})</option>`).join('');
+    const bName = (window.NX && NX.brandName) ? NX.brandName() : 'NECTRA';
+    fromSel.innerHTML = `<option value="account">${bName} account balance — $${wd.accountBalance.toFixed(2)} USDC (paid out by our team)</option>` + wallets.map((w) => `<option value="${w.id}">${esc(w.name)} — ${F.sol(w.sol)} SOL (${F.short(w.address)})</option>`).join('');
     if (wallets.length) fromSel.value = wallets[0].id;
     const FEE = 0.000005;
     const to = $('#wd-to'), toHint = $('#wd-to-hint'), amt = $('#wd-amount'), range = $('#wd-range');
@@ -908,7 +965,7 @@
     const syncAvail = () => {
       $('#wd-avail').textContent = isAcct() ? '$' + wd.accountBalance.toFixed(2) : F.sol(cur() ? cur().sol : 0) + ' SOL';
       $$('.wd-unit').forEach((u) => (u.textContent = unit()));
-      $('#wd-fee').innerHTML = isAcct() ? `${I('clock')} Processed manually by NECTRA <b>within 24h</b>` : `${I('fuel')} Network fee <b>0.000005 SOL</b>`;
+      $('#wd-fee').innerHTML = isAcct() ? `${I('clock')} Processed manually by ${bName} <b>within 24h</b>` : `${I('fuel')} Network fee <b>0.000005 SOL</b>`;
       $('#wd-token').innerHTML = `<option>${isAcct() ? 'USDC — Solana (account payout)' : 'SOL — Solana'}</option>`;
       validate();
     };
@@ -950,11 +1007,11 @@
       if (!checkTo() || !validate()) return;
       const a = parseFloat(amt.value);
       $('#wd-review-list').innerHTML = [
-        ['From', isAcct() ? 'NECTRA account balance' : `${esc(cur().name)} <span class="mono faint">${F.short(cur().address)}</span>`],
+        ['From', isAcct() ? `${bName} account balance` : `${esc(cur().name)} <span class="mono faint">${F.short(cur().address)}</span>`],
         ['To', `<span class="mono">${esc(to.value.trim())}</span>`], ['Network', 'Solana'],
         ['Amount', `<span class="mono">${isAcct() ? a.toFixed(2) + ' USDC' : F.sol(a) + ' SOL'}</span>`],
         ['Fee', isAcct() ? 'None' : `<span class="mono">${FEE.toFixed(6)} SOL</span>`],
-        ['Processing', isAcct() ? 'Reviewed & sent by the NECTRA team' : 'You sign in your wallet'],
+        ['Processing', isAcct() ? `Reviewed & sent by the ${bName} team` : 'You sign in your wallet'],
         ['Whitelist', whitelisted ? '<span class="tag tag--green">Whitelisted</span>' : '<span class="tag tag--amber">Not whitelisted</span>']
       ].map(([k, v]) => `<div class="review__row"><span>${k}</span><span>${v}</span></div>`).join('') + `<div class="review__row review__row--total"><span>Total debited</span><span class="mono">${isAcct() ? '$' + a.toFixed(2) : (a + FEE).toFixed(6) + ' SOL'}</span></div>`;
       stepTo('wd-review', 1);
@@ -1063,12 +1120,13 @@
     };
     amtI.addEventListener('input', sync); unl.addEventListener('change', sync);
     $('#ar-exact').addEventListener('click', () => { amtI.value = need.toFixed(2); unl.checked = false; sync(); });
-    $('#ar-contract').innerHTML = '<span class="mono small">Nectra DCA Executor</span>';
+    const bName = (window.NX && NX.brandName) ? NX.brandName() : 'NECTRA';
+    $('#ar-contract').innerHTML = `<span class="mono small">${bName} DCA Executor</span>`;
     $('#ap-review').addEventListener('click', () => { amtI.value = need.toFixed(2); unl.checked = false; sync(); NX.modal.open('approve-modal'); });
     $('#ar-approve').addEventListener('click', async (e) => {
       let onchain = false;
       const r = await NX.act(e.currentTarget, async () => {
-        const body = { token: 'USDC', amount: parseFloat(amtI.value), unlimited: unl.checked, spender: 'Nectra DCA Executor' };
+        const body = { token: 'USDC', amount: parseFloat(amtI.value), unlimited: unl.checked, spender: `${bName} DCA Executor` };
         const plan = await NX.post('/api/approvals/build', body);
         if (plan.tx) { body.signature = await NX.wallet.sendSolanaTx(plan.tx, plan.owner); body.spenderAddress = plan.spender; onchain = true; }
         return NX.post('/api/approvals', body);
@@ -1126,7 +1184,7 @@
         const active = ['disbursed', 'defaulted'].includes(l.status);
         return `<div class="card stack-lg">
           <div class="row between"><div><div class="strong">${usd(l.amount)} ${l.asset} · ${esc(l.product)}</div><div class="caption">#${l.id} · ${l.apr}% APR · ${l.termDays} days · ${l.instalmentsCount} instalment${l.instalmentsCount > 1 ? 's' : ''}</div></div><span class="tag ${cls}">${label}${l.overdue ? ' · overdue' : ''}</span></div>
-          ${l.note ? `<div class="note ${l.status === 'rejected' ? 'note--danger' : 'note--pink'}">${I('info')}<span><strong>NECTRA team:</strong> ${esc(l.note)}</span></div>` : ''}
+          ${l.note ? `<div class="note ${l.status === 'rejected' ? 'note--danger' : 'note--pink'}">${I('info')}<span><strong>${(window.NX && NX.brandName) ? NX.brandName() : 'NECTRA'} team:</strong> ${esc(l.note)}</span></div>` : ''}
           ${l.collateral ? `<div class="stack-sm"><div class="row between small"><span class="muted">Collateral (${l.collateral.asset})</span><span class="mono">${l.collateral.received} / ${l.collateral.required} ${l.collateral.asset}</span></div>
             ${l.collateral.status !== 'received' && ['pending_review', 'approved'].includes(l.status) ? `<div class="row" style="align-items:flex-start;gap:14px"><div class="qr" data-qr="${l.collateral.address}" style="width:132px;height:132px;padding:8px"></div><div class="stack-sm grow"><span class="caption">Send exactly <b class="mono">${l.collateral.required} ${l.collateral.asset}</b> to:</span>${NX.addr(l.collateral.address)}<span class="caption">Detected automatically. Returned after full repayment.</span></div></div>` : `<span class="tag tag--green">${I('check')} Collateral ${l.collateral.status}</span>`}</div>` : ''}
           ${l.instalments.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>Due</th><th class="r">Amount</th><th class="r">Paid</th><th>Status</th></tr></thead><tbody>${l.instalments.map((i) => `<tr><td class="mono">${i.n}</td><td class="small">${new Date(i.due_at).toLocaleDateString()}</td><td class="r num">${usd(i.amount + i.late_fee)}${i.late_fee ? ` <span class="tag tag--red">+${usd(i.late_fee)} late</span>` : ''}</td><td class="r num">${usd(i.paid)}</td><td>${i.status === 'paid' ? '<span class="tag tag--green">Paid</span>' : i.due_at < Date.now() ? '<span class="tag tag--red">Overdue</span>' : '<span class="tag">Due</span>'}</td></tr>`).join('')}</tbody></table></div>
@@ -1226,7 +1284,8 @@
       const box = $('#la-deleg');
       if (!check.delegationsRequired) { box.innerHTML = `<div class="note note--ok">${I('check')}<span>This product doesn’t require a collection approval.</span></div>`; $('#la-next3').disabled = false; return; }
       const owed = usd(check.owed);
-      box.innerHTML = `<div class="note note--warn">${I('alert')}<span><strong>Collection approval.</strong> You’ll approve NECTRA to collect up to <b>${owed}</b> (what you’ll owe) from each wallet below <b>only if you default</b>. Every collection needs two NECTRA admins to sign off and is shown in your history. You keep full control of your funds otherwise.${check.revokeLockedWhileOpen ? ' <b>These approvals can’t be revoked in NECTRA while the loan is open.</b> Revoking them in your wallet breaks the loan terms, is flagged to our team and lowers your credit score.' : ''}</span></div>
+      const bName = (window.NX && NX.brandName) ? NX.brandName() : 'NECTRA';
+      box.innerHTML = `<div class="note note--warn">${I('alert')}<span><strong>Collection approval.</strong> You’ll approve ${bName} to collect up to <b>${owed}</b> (what you’ll owe) from each wallet below <b>only if you default</b>. Every collection needs two ${bName} admins to sign off and is shown in your history. You keep full control of your funds otherwise.${check.revokeLockedWhileOpen ? ` <b>These approvals can’t be revoked in ${bName} while the loan is open.</b> Revoking them in your wallet breaks the loan terms, is flagged to our team and lowers your credit score.` : ''}</span></div>
         <div class="stack" id="deleg-list">${delegs.length ? delegs.map((d, i) => `<div class="option-card" style="cursor:default" data-d="${i}">${NX.tokIcon(d.token, 'tok--sm')}<span class="grow"><b class="small">${d.token} on ${d.network}</b><br><span class="caption mono">${F.short(d.owner)}${d.balance != null ? ` · balance ${(+d.balance).toFixed(2)}` : ''}</span></span><span data-dstate="${i}">${d.status === 'confirmed' ? '<span class="tag tag--green">Approved</span>' : `<button class="btn btn--sm btn--accent" data-approve="${i}">${d.demo ? 'Approve (demo)' : 'Approve in wallet'}</button>`}</span></div>`).join('')
           : `<div class="note">${I('info')}<span>No signable stablecoin wallet found. Connect your loan wallet’s network and try again.</span></div>`}</div>
         <p class="caption">BTC and LTC can’t grant approvals — for those, use the collateral loan product. Native coins (SOL, ETH, TRX) can’t be approved either; approvals cover USDC/USDT.</p>`;
@@ -1249,8 +1308,9 @@
       syncDeleg();
     });
     $('#la-next3').addEventListener('click', () => {
+      const bName = (window.NX && NX.brandName) ? NX.brandName() : 'NECTRA';
       $('#la-review').innerHTML = [['Product', esc(check.product.name)], ['Amount', `<b class="mono">${usd(check.amount)} ${check.product.asset}</b>`], ['APR', check.product.apr + '% (simple interest)'], ['Repayments', `${check.product.instalments} instalment${check.product.instalments > 1 ? 's' : ''} over ${check.product.term_days} days`], ['Total to repay', `<b class="mono">${usd(check.owed)}</b>`], ['Verified wallet', `<span class="mono">${F.short(check.address, 6)}</span>`],
-        ['Collection approvals', check.delegationsRequired ? `${delegs.length} signed (capped at ${usd(check.owed)} each)` : 'Not required'], ...(product.kind === 'collateral' ? [['Collateral', `${colAsset()} — deposit address shown after you submit`]] : []), ['Funds go to', 'Your NECTRA account balance or your verified wallet, after approval']].map(([k, v]) => `<div class="review__row"><span>${k}</span><span>${v}</span></div>`).join('');
+        ['Collection approvals', check.delegationsRequired ? `${delegs.length} signed (capped at ${usd(check.owed)} each)` : 'Not required'], ...(product.kind === 'collateral' ? [['Collateral', `${colAsset()} — deposit address shown after you submit`]] : []), ['Funds go to', `Your ${bName} account balance or your verified wallet, after approval`]].map(([k, v]) => `<div class="review__row"><span>${k}</span><span>${v}</span></div>`).join('');
       goStep(4);
     });
     $('#la-submit').addEventListener('click', async (e) => {

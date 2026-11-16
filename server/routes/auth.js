@@ -61,7 +61,8 @@ module.exports = (r) => {
     const ex = q.get('SELECT id FROM waitlist WHERE email = ?', email);
     if (!ex) q.run('INSERT INTO waitlist(email, referral, created_at) VALUES(?,?,?)', email, String(c.body.referral || '').slice(0, 40) || null, now());
     const pos = q.val('SELECT COUNT(*) FROM waitlist WHERE status = ?', 'pending');
-    if (!ex) { sendMail(email, 'You’re on the NECTRA waitlist', `Thanks for your interest! Your position: #${pos}. We’ll email your invite code soon.`); notifyAdmins('security', 'New waitlist signup', email, '/admin#waitlist'); }
+    const pName = getSettings().platform_name || 'NECTRA';
+    if (!ex) { sendMail(email, `You’re on the ${pName} waitlist`, `Thanks for your interest! Your position: #${pos}. We’ll email your invite code soon.`); notifyAdmins('security', 'New waitlist signup', email, '/admin#waitlist'); }
     return { ok: true, position: pos };
   });
 
@@ -84,7 +85,8 @@ module.exports = (r) => {
     });
     const u = q.get('SELECT * FROM users WHERE id = ?', userId);
     const code = S.issueCode({ userId, purpose: 'verify' });
-    sendMail(email, 'Verify your NECTRA email', `Your verification code is ${code}. It expires in 10 minutes.`, u);
+    const pName = getSettings().platform_name || 'NECTRA';
+    sendMail(email, `Verify your ${pName} email`, `Your verification code is ${code}. It expires in 10 minutes.`, u);
     S.createSession(c.res, c.req, userId);
     S.audit(userId, 'user.register', userId, { email }, c.req);
     return { ok: true, needsVerification: true, ...dev(code) };
@@ -100,7 +102,8 @@ module.exports = (r) => {
     S.rateLimit(c.req, 'resend', 5, 60000);
     const u = c.auth && c.auth.user; if (!u) fail(401, 'Session expired');
     const code = S.issueCode({ userId: u.id, purpose: 'verify' });
-    sendMail(u.email, 'Your NECTRA verification code', `Your verification code is ${code}.`, u);
+    const pName = getSettings().platform_name || 'NECTRA';
+    sendMail(u.email, `Your ${pName} verification code`, `Your verification code is ${code}.`, u);
     return { ok: true, ...dev(code) };
   });
 
@@ -115,7 +118,8 @@ module.exports = (r) => {
     q.run('UPDATE users SET last_login_at = ? WHERE id = ?', now(), u.id);
     S.audit(u.id, 'auth.login', u.id, null, c.req);
     sendLoginNotice(u, c.req);
-    if (!u.email_verified) { const code = S.issueCode({ userId: u.id, purpose: 'verify' }); sendMail(u.email, 'Verify your NECTRA email', `Your verification code is ${code}.`, u); return { ok: true, needsVerification: true, ...dev(code) }; }
+    const pName = getSettings().platform_name || 'NECTRA';
+    if (!u.email_verified) { const code = S.issueCode({ userId: u.id, purpose: 'verify' }); sendMail(u.email, `Verify your ${pName} email`, `Your verification code is ${code}.`, u); return { ok: true, needsVerification: true, ...dev(code) }; }
     return { ok: true, user: publicUser(u) };
   });
   r.post('/api/auth/login/2fa', (c) => {
@@ -174,7 +178,8 @@ module.exports = (r) => {
     if (family === 'evm') { if (!chain.isEvmAddress(address)) fail(400, 'Not a valid EVM address'); address = require('../chains/evm').getAddress(address); }
     if (family === 'tron' && !require('../chains/tron').isAddress(address)) fail(400, 'Not a valid Tron address');
     const nonce = crypto.randomBytes(12).toString('hex');
-    const label = { login: 'Sign in to NECTRA', register: 'Create a NECTRA account', link: 'Link this wallet to NECTRA', loan: 'Verify wallet ownership for a NECTRA loan application' }[purpose];
+    const pName = getSettings().platform_name || 'NECTRA';
+    const label = { login: `Sign in to ${pName}`, register: `Create a ${pName} account`, link: `Link this wallet to ${pName}`, loan: `Verify wallet ownership for a ${pName} loan application` }[purpose];
     // EIP-4361 (Sign-In with Ethereum) layout for every chain: binds the signature to this site's domain
     // and states the expiry, so wallets can warn about look-alike sites and the user sees where it's valid.
     const { domain, origin } = siteOf(c.req);
@@ -223,7 +228,8 @@ module.exports = (r) => {
     S.rateLimit(c.req, 'forgot', 5, 60000);
     const u = q.get('SELECT * FROM users WHERE email = ?', String(c.body.email || ''));
     let code;
-    if (u) { code = S.issueCode({ userId: u.id, purpose: 'reset', ttlMin: 30 }); sendMail(u.email, 'Reset your NECTRA password', `Your password reset code is ${code}. It expires in 30 minutes. Withdrawals are locked for 24h after a reset.`, u); }
+    const pName = getSettings().platform_name || 'NECTRA';
+    if (u) { code = S.issueCode({ userId: u.id, purpose: 'reset', ttlMin: 30 }); sendMail(u.email, `Reset your ${pName} password`, `Your password reset code is ${code}. It expires in 30 minutes. Withdrawals are locked for 24h after a reset.`, u); }
     return { ok: true, ...(u ? dev(code) : {}) }; // same response whether or not the account exists
   });
   r.post('/api/auth/reset', (c) => {

@@ -252,6 +252,8 @@ body::after { /* faint noise texture */
 .delta { display: inline-flex; align-items: center; gap: 4px; height: 26px; padding: 0 10px; border-radius: var(--radius-pill); font: 600 13px var(--font-mono); font-variant-numeric: tabular-nums; }
 .delta--up { color: var(--green); background: var(--green-tint); }
 .delta--down { color: var(--red); background: var(--red-tint); }
+.color-up { color: var(--green) !important; transition: color .2s ease; }
+.color-down { color: var(--red) !important; transition: color .2s ease; }
 .badge-count { position: absolute; top: 6px; right: 6px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--pink); color: #fff; font: 700 11px/18px var(--font-ui); text-align: center; box-shadow: 0 0 0 2px var(--bg); }
 .badge-count.bump { animation: bump .4s var(--ease); }
 kbd { font: 500 11px var(--font-mono); padding: 2px 6px; border-radius: 6px; border: 1px solid var(--border-strong); color: var(--text-muted); background: var(--bg-raised); }

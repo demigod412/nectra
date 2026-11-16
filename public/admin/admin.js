@@ -700,7 +700,19 @@
     $('#ss').addEventListener('click', (e) => {
       const body = {};
       $$('[data-k]').forEach((el) => { body[el.dataset.k] = el.type === 'checkbox' ? el.checked : el.dataset.num === 'true' ? +el.value : el.value; });
-      act(e.currentTarget, () => NX.patch('/api/admin/settings', body), 'Settings saved');
+      act(e.currentTarget, async () => {
+        await NX.patch('/api/admin/settings', body);
+        if (body.platform_name || body.platform_logo_url || body.platform_favicon_url) {
+          if (window.NX && NX.applyBranding) {
+            NX.applyBranding({
+              name: body.platform_name || (counts.settings && counts.settings.platform_name) || 'NECTRA',
+              logo: body.platform_logo_url || '',
+              favicon: body.platform_favicon_url || 'assets/favicon.svg'
+            });
+          }
+        }
+        await refreshCounts();
+      }, 'Settings saved');
     });
     $('#test-tg')?.addEventListener('click', async (e) => {
       e.preventDefault();
@@ -713,8 +725,17 @@
       e.preventDefault();
       const targetEmail = prompt('Enter recipient email address for SMTP test:', NX.data.user ? NX.data.user.email : 'admin@nectra.local');
       if (!targetEmail) return;
+      const host = $('[data-k="smtp_host"]')?.value || '';
+      const port = +($('[data-k="smtp_port"]')?.value || 587);
+      const user = $('[data-k="smtp_user"]')?.value || '';
+      const pass = $('[data-k="smtp_pass"]')?.value || '';
+      const from = $('[data-k="smtp_from"]')?.value || '';
+      const secure = $('[data-k="smtp_secure"]')?.checked;
       await act(e.currentTarget, async () => {
-        const res = await NX.post('/api/admin/smtp/test', { to: targetEmail });
+        const res = await NX.post('/api/admin/smtp/test', {
+          to: targetEmail,
+          host, port, user, pass, from, secure
+        });
         NX.toast(res && res.message ? res.message : 'Test email sent successfully!');
       });
     });
@@ -767,6 +788,13 @@
     $('#adm-status').innerHTML = `<span class="dot dot--${st.level} dot--pulse"></span>`; $('#adm-status').dataset.tip = st.label; $('#adm-status').dataset.tipPos = 'bottom';
     $('#adm-demo').hidden = !counts.settings.demo_mode;
     const pName = (counts.settings && counts.settings.platform_name) || 'NECTRA';
+    if (window.NX && NX.applyBranding) {
+      NX.applyBranding({
+        name: pName,
+        logo: (counts.settings && counts.settings.platform_logo_url) || '',
+        favicon: (counts.settings && counts.settings.platform_favicon_url) || ''
+      });
+    }
     $$('.brand__name').forEach((el) => { el.textContent = pName; });
   }
   async function route() {
@@ -781,7 +809,14 @@
     const m = main();
     const fresh = m.cloneNode(false); m.replaceWith(fresh); // drop old listeners
     fresh.innerHTML = '<div class="skel skel--title"></div><div class="skel skel--chart mt-16"></div>';
-    try { await V[sec.id](arg); NX.hydrateIcons(main()); NX.initTabs(main()); }
+    try {
+      await V[sec.id](arg);
+      NX.hydrateIcons(main());
+      NX.initTabs(main());
+      if (window.NX && NX.walkAndReplace && pName && pName !== 'NECTRA') {
+        NX.walkAndReplace(main(), pName, 'NECTRA');
+      }
+    }
     catch (e) { main().innerHTML = e.data && e.data.code === 'ADMIN_2FA_REQUIRED' ? `<section class="card center stack-lg" style="max-width:520px;margin:40px auto"><div class="feature__ic" style="margin:0 auto">${I('key2fa')}</div><h2>Two-factor authentication required</h2><p class="muted">This platform requires staff to use an authenticator app. Set it up on your account, then come back.</p><a class="btn btn--primary" href="/settings.html#security">Set up 2FA</a></section>` : `<div class="note note--danger">${I('alert')}<span>${esc(e.message)}</span></div>`; }
   }
 

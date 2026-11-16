@@ -153,7 +153,14 @@ module.exports = (r) => {
     S.audit(a.id, 'admin.login_unlock', c.params.id, { email: u.email }, c.req);
     return { ok: true };
   });
-  r.post('/api/admin/users/:id/pause-bots', (c) => { const a = S.requirePerm(c, permFor(c)); const n = E.pauseAll(+c.params.id, 'Paused by admin'); if (n) notify(+c.params.id, 'bot', 'Bots paused by admin', `${n} bot(s) were paused by the NECTRA team.`, 'bot.html'); S.audit(a.id, 'admin.pause_user_bots', c.params.id, { n }, c.req); return { paused: n }; });
+  r.post('/api/admin/users/:id/pause-bots', (c) => {
+    const a = S.requirePerm(c, permFor(c));
+    const pName = getSettings().platform_name || 'NECTRA';
+    const n = E.pauseAll(+c.params.id, 'Paused by admin');
+    if (n) notify(+c.params.id, 'bot', 'Bots paused by admin', `${n} bot(s) were paused by the ${pName} team.`, 'bot.html');
+    S.audit(a.id, 'admin.pause_user_bots', c.params.id, { n }, c.req);
+    return { paused: n };
+  });
 
   /* ---------- invites & waitlist ---------- */
   r.get('/api/admin/invites', (c) => { S.requirePerm(c, permFor(c)); return { rows: q.all('SELECT i.*, u.email creator FROM invites i LEFT JOIN users u ON u.id = i.created_by ORDER BY i.created_at DESC LIMIT 500') }; });
@@ -180,7 +187,8 @@ module.exports = (r) => {
     q.run('INSERT INTO invites(code, kind, created_by, max_uses, note, created_at) VALUES(?,?,?,?,?,?)', code, 'admin', a.id, 1, 'Waitlist: ' + w.email, now());
     q.run("UPDATE waitlist SET status = 'invited', invite_code = ? WHERE id = ?", code, w.id);
     const base = process.env.PUBLIC_URL || `http://${c.req.headers.host}`;
-    sendMail(w.email, 'Your NECTRA invite is here 🌸', `You’re in! Your invite code: ${code}\n\nCreate your account: ${base}/register.html`);
+    const pName = getSettings().platform_name || 'NECTRA';
+    sendMail(w.email, `Your ${pName} invite is here 🌸`, `You’re in! Your invite code: ${code}\n\nCreate your account: ${base}/register.html`);
     S.audit(a.id, 'admin.waitlist_invite', w.id, { email: w.email }, c.req);
     return { code };
   });
@@ -239,8 +247,9 @@ module.exports = (r) => {
     // Two-admin requirement removed: single super admin / admin approval is enough to approve directly
     q.run("UPDATE loans SET status = 'approved', approvals = ?, amount = ?, admin_note = COALESCE(?, admin_note), reviewed_by = ?, reviewed_at = ?, updated_at = ? WHERE id = ?", JSON.stringify(approvals), amount, str(c.body.note, 300) || null, a.id, now(), now(), l.id);
     const u = q.get('SELECT * FROM users WHERE id = ?', l.user_id);
+    const pName = getSettings().platform_name || 'NECTRA';
     notify(u.id, 'transfer', 'Loan approved ✅', `Loan #${l.id} for $${amount.toFixed(2)} was approved. Funds will be sent shortly.`, 'loans.html#mine');
-    if (u.email) sendMail(u.email, 'Your NECTRA loan was approved', `Loan #${l.id}: ${amount} ${l.asset} approved.`, u);
+    if (u.email) sendMail(u.email, `Your ${pName} loan was approved`, `Loan #${l.id}: ${amount} ${l.asset} approved.`, u);
     S.audit(a.id, 'admin.loan_approve', l.id, { amount, approvals }, c.req);
     return { ok: true };
   });
@@ -250,8 +259,9 @@ module.exports = (r) => {
     const reason = str(c.body.reason, 300); if (!reason) fail(400, 'Give the applicant a reason');
     q.run("UPDATE loans SET status = 'rejected', admin_note = ?, reviewed_by = ?, reviewed_at = ?, updated_at = ? WHERE id = ?", reason, a.id, now(), now(), l.id);
     const u = q.get('SELECT * FROM users WHERE id = ?', l.user_id);
+    const pName = getSettings().platform_name || 'NECTRA';
     notify(u.id, 'transfer', 'Loan application declined', reason, 'loans.html#mine');
-    if (u.email) sendMail(u.email, 'Update on your NECTRA loan application', `Application #${l.id} was declined: ${reason}`, u);
+    if (u.email) sendMail(u.email, `Update on your ${pName} loan application`, `Application #${l.id} was declined: ${reason}`, u);
     S.audit(a.id, 'admin.loan_reject', l.id, { reason }, c.req);
     return { ok: true };
   });
@@ -516,7 +526,8 @@ module.exports = (r) => {
   function payoutPaid(id, ref) {
     const w = q.get("SELECT * FROM withdrawals WHERE id = ? AND source = 'account' AND status = 'pending_admin'", id); if (!w) throw new Error('Payout is not pending');
     if (!q.run("UPDATE withdrawals SET status = 'paid', admin_ref = ?, updated_at = ? WHERE id = ? AND status = 'pending_admin'", ref, now(), w.id).changes) throw new Error('Payout is not pending');
-    q.run('INSERT INTO transactions(user_id, type, token, amount, status, to_addr, signature, simulated, confirmations, note, created_at, updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)', w.user_id, 'Withdraw', w.token, w.amount, 'confirmed', w.to_addr, ref, 0, 32, 'Account payout (processed by NECTRA)', now(), now());
+    const pName = getSettings().platform_name || 'NECTRA';
+    q.run('INSERT INTO transactions(user_id, type, token, amount, status, to_addr, signature, simulated, confirmations, note, created_at, updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)', w.user_id, 'Withdraw', w.token, w.amount, 'confirmed', w.to_addr, ref, 0, 32, `Account payout (processed by ${pName})`, now(), now());
     notify(w.user_id, 'transfer', 'Payout sent', `${w.amount.toFixed(2)} was sent to ${w.to_addr.slice(0, 4)}…${w.to_addr.slice(-4)} · ref ${ref.slice(0, 16)}`, 'portfolio.html#history');
     return { ok: true };
   }
@@ -558,7 +569,8 @@ module.exports = (r) => {
     const a = S.requirePerm(c, permFor(c));
     const users = q.all("SELECT DISTINCT user_id FROM bots WHERE status = 'running'");
     let n = 0;
-    users.forEach((u) => { const k = E.pauseAll(u.user_id, 'Platform-wide pause'); n += k; if (k) notify(u.user_id, 'bot', 'All bots paused (platform)', 'NECTRA paused all bots platform-wide. Open positions were kept.', 'bot.html'); });
+    const pName = getSettings().platform_name || 'NECTRA';
+    users.forEach((u) => { const k = E.pauseAll(u.user_id, 'Platform-wide pause'); n += k; if (k) notify(u.user_id, 'bot', 'All bots paused (platform)', `${pName} paused all bots platform-wide. Open positions were kept.`, 'bot.html'); });
     S.audit(a.id, 'admin.kill_switch', null, { n }, c.req);
     return { paused: n };
   });
@@ -656,9 +668,17 @@ module.exports = (r) => {
   r.post('/api/admin/smtp/test', async (c) => {
     S.requirePerm(c, permFor(c));
     const to = (c.body && c.body.to) || c.auth.user.email || 'admin@nectra.local';
+    const customConfig = (c.body && (c.body.host || c.body.smtp_host)) ? {
+      host: c.body.host || c.body.smtp_host,
+      port: +(c.body.port || c.body.smtp_port || 587),
+      user: c.body.user || c.body.smtp_user || '',
+      pass: c.body.pass || c.body.smtp_pass || '',
+      from: c.body.from || c.body.smtp_from || '',
+      secure: c.body.secure != null ? !!c.body.secure : (c.body.smtp_secure != null ? !!c.body.smtp_secure : undefined)
+    } : null;
     try {
       const { testSmtpConnection } = require('../mail');
-      const res = await testSmtpConnection(to);
+      const res = await testSmtpConnection(to, customConfig);
       return { ok: true, message: `Test email successfully sent to ${to}` };
     } catch (err) {
       fail(400, `SMTP Test failed: ${err.message}`);
@@ -667,9 +687,10 @@ module.exports = (r) => {
 
   r.post('/api/admin/telegram/test', async (c) => {
     S.requirePerm(c, permFor(c));
+    const pName = getSettings().platform_name || 'NECTRA';
     const { sendTelegramAlert } = require('../events');
     const res = await sendTelegramAlert({
-      title: 'NECTRA Test Alert',
+      title: `${pName} Test Alert`,
       text: 'Your Telegram alerting bot is connected and verified successfully! Real-time alerts for sweeps, impersonations, master key rotations, and withdrawals will appear here.',
       severity: 'info',
       fields: { Status: 'Connected', Time: new Date().toLocaleTimeString() }
