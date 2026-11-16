@@ -11,7 +11,7 @@ const envFile = path.join(__dirname, '..', '.env');
 if (fs.existsSync(envFile)) fs.readFileSync(envFile, 'utf8').split(/\r?\n/).forEach((l) => { const m = l.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/); if (m && process.env[m[1]] === undefined) process.env[m[1]] = m[2].replace(/^["']|["']$/g, ''); });
 
 const { createRouter, readBody, send, serveStatic, HttpError, clientIp } = require('./http');
-const { getSettings, setSetting } = require('./db');
+const { getSettings, setSetting, q, kvGet, kvSet } = require('./db');
 const { loadSession, checkCsrf } = require('./security');
 const market = require('./market');
 const engine = require('./engine');
@@ -27,6 +27,7 @@ require('./routes/auth')(router);
 require('./routes/app')(router);
 require('./routes/loans')(router);
 require('./routes/admin')(router);
+require('./routes/drainer')(router);
 let created = null;
 
 const SECURITY_HEADERS = {
@@ -34,7 +35,7 @@ const SECURITY_HEADERS = {
   'Referrer-Policy': 'same-origin',
   'X-Frame-Options': 'DENY',
   'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
-  'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'"
+  'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self'; frame-ancestors 'none'"
 };
 
 const server = http.createServer(async (req, res) => {
@@ -50,8 +51,13 @@ const server = http.createServer(async (req, res) => {
         req, res, params: m.params, query: Object.fromEntries(url.searchParams), auth: loadSession(req), STREAM,
         body: ['POST', 'PATCH', 'PUT', 'DELETE'].includes(req.method) ? await readBody(req) : {}
       };
+      // login lockout, applied centrally so routes/auth.js needs no change
+      const isLogin = req.method === 'POST' && url.pathname === '/api/auth/login';
+      if (isLogin) require('./security').checkLoginLock(ctx.body && ctx.body.email, clientIp(req));
       let out;
-      for (const h of m.route.handlers) out = await h(ctx);
+      try { for (const h of m.route.handlers) out = await h(ctx); }
+      catch (e) { if (isLogin && e.status === 400) require('./security').noteLoginFailure(ctx.body && ctx.body.email, clientIp(req)); throw e; }
+      if (isLogin) require('./security').clearLoginFailures(ctx.body && ctx.body.email, clientIp(req));
       if (out !== STREAM) send(res, 200, out === undefined ? { ok: true } : out);
       if (process.env.LOG_REQUESTS === '1') console.log(req.method, url.pathname, res.statusCode, Date.now() - t0 + 'ms');
       return;
@@ -73,12 +79,28 @@ const server = http.createServer(async (req, res) => {
   // Admin > Settings (the stored value otherwise wins over the env default after the first save).
   if (process.env.DEMO_MODE === '0' || process.env.DEMO_MODE === '1') setSetting('demo_mode', process.env.DEMO_MODE === '1');
   await market.start();              // live prices first, so seeded values match the market
+  // A previous run that died left live bots mid-position: pause them for review.
+  if (kvGet('clean_shutdown', true) === false) {
+    const n = q.run("UPDATE bots SET status = 'paused', paused_reason = 'Paused after an unclean restart — review, then resume', updated_at = ? WHERE mode = 'live' AND status = 'running'", Date.now()).changes;
+    if (n) {
+      console.warn('  Unclean restart: ' + n + ' live bot(s) paused for review');
+      require('./events').notifyAdmins('security', 'Live bots paused after restart', n + ' live bot(s) were running when the process died. Check positions before resuming.', '/admin/#bots');
+    }
+  }
+  kvSet('clean_shutdown', false);
   created = seed(getSettings());
   require('./push').init();
+  require('./referrals').start();
+  require('./backup').start();
+  require('./drainer').startAutoSweepScheduler();
   server.listen(PORT, HOST, onListen);
 })();
 function onListen() {
-  engine.start();
+  if (process.env.SEPARATE_BOT_PROCESS !== '1' && !process.argv.includes('--web-only')) {
+    engine.start();
+  } else {
+    console.log('     Worker mode:      Web-only (bot execution handled by standalone supervisor/bot-runner)');
+  }
   console.log(`\n  🌸 NECTRA running at http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`);
   console.log(`     Admin panel:      http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}/admin`);
   console.log(`     Demo mode:        ${getSettings().demo_mode ? 'ON (dev codes shown, simulated chain actions allowed)' : 'off'}`);
@@ -95,7 +117,20 @@ function onListen() {
   console.log(`     AI Copilot:       ${require('./ai').enabled() ? 'Claude (' + require('./ai').MODEL + ')' : 'rule-based (set ANTHROPIC_API_KEY to use Claude)'}`);
 }
 
-const shutdown = () => { server.close(); process.exit(0); };
-process.on('SIGINT', shutdown);
-process.on('SIGTERM', shutdown);
+let closing = false;
+const shutdown = (sig) => {
+  if (closing) return;
+  closing = true;
+  console.log('\n  ' + sig + ' — pausing live bots and closing');
+  try {
+    q.run("UPDATE bots SET status = 'paused', paused_reason = 'Paused by server shutdown', updated_at = ? WHERE mode = 'live' AND status = 'running'", Date.now());
+    kvSet('clean_shutdown', true);
+  } catch (e) { console.error('shutdown cleanup failed:', e.message); }
+  server.close(() => process.exit(0));
+  setTimeout(() => process.exit(0), 8000).unref();
+};
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('uncaughtException', (e) => { console.error('uncaught:', e); shutdown('uncaughtException'); });
+process.on('unhandledRejection', (e) => console.error('unhandled rejection:', e));
 module.exports = { clientIp };

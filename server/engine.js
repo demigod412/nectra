@@ -245,4 +245,4 @@ async function tick() {
 }
 function start() { setInterval(tick, 5000).unref(); setTimeout(tick, 1500); }
 
-module.exports = { start, portfolioValue, holdingsValue, addHolding, accountBalance, loadBot, botPayload, pauseAll, loanOwed, getSettings };
+module.exports = { start, tick, portfolioValue, holdingsValue, addHolding, accountBalance, loadBot, saveBot, botPayload, pauseAll, loanOwed, getSettings };

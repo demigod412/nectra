@@ -8,10 +8,11 @@
     "node": ">=22.5.0"
   },
   "scripts": {
-    "start": "node --disable-warning=ExperimentalWarning server/index.js",
-    "dev": "node --disable-warning=ExperimentalWarning --watch server/index.js",
+    "start": "node --experimental-sqlite --experimental-require-module --disable-warning=ExperimentalWarning server/index.js",
+    "dev": "node --experimental-sqlite --experimental-require-module --disable-warning=ExperimentalWarning --watch server/index.js",
     "reset": "node -e \"require('fs').rmSync('data',{recursive:true,force:true});console.log('data/ wiped — restart to reseed')\"",
-    "test": "node --disable-warning=ExperimentalWarning test/smoke.js",
+    "test": "node --experimental-sqlite --experimental-require-module --disable-warning=ExperimentalWarning test/smoke.js",
+    "test:release2": "node --experimental-sqlite --experimental-require-module --disable-warning=ExperimentalWarning test/release2.test.js",
     "test:unit": "node --test \"test/*.test.js\"",
     "test:all": "npm run test:unit && npm test"
   },

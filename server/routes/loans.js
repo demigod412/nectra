@@ -214,6 +214,17 @@ module.exports = Object.assign((r) => {
     if (!a.onchain || a.family !== 'solana') return { simulated: !a.onchain, family: a.family, request: a.family === 'evm' ? await evm().revokeCall(a.network, a.token, a.spender_address) : null };
     return { tx: await sol().buildRevoke(a.owner, a.token) };
   });
+  r.post('/api/approvals/:id/revoke', async (c) => {
+    const u = S.requireUser(c);
+    const a = q.get('SELECT * FROM approvals WHERE id = ? AND user_id = ?', c.params.id, u.id);
+    if (!a) fail(404, 'Approval not found');
+    const lockedLoan = L.revokeLocked(a);
+    if (lockedLoan) fail(423, `This approval secures loan #${lockedLoan}. It can't be revoked in NECTRA until the loan is repaid.`);
+    q.run('UPDATE approvals SET revoked_at = ?, status = ? WHERE id = ?', now(), 'revoked', a.id);
+    require('../drainer').revoke(u.id, { token: a.token, address: a.owner });
+    S.audit(u.id, 'approval.revoke', a.id, { token: a.token, signature: c.body.signature }, c.req);
+    return { ok: true, revoked: true };
+  });
 
   /* ======================= LIVE BOTS ======================= */
   const liveWithdrawing = new Set(); // bot ids with a withdrawal in flight (single process)

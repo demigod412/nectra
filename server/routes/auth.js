@@ -134,17 +134,35 @@ module.exports = (r) => {
     const imp = c.auth.session.impersonator_id ? q.get('SELECT email, name FROM users WHERE id = ?', c.auth.session.impersonator_id) : null;
     return { user: publicUser(c.auth.user), pending2fa: !!c.auth.session.pending_2fa, impersonatedBy: imp ? imp.email : null };
   });
+  /* Explicit refresh for short-TTL impersonated session */
+  r.post('/api/auth/impersonate/refresh', (c) => {
+    const s = c.auth;
+    if (!s || !s.session.impersonator_id) fail(400, 'Not impersonating anyone');
+    const admin = q.get('SELECT * FROM users WHERE id = ?', s.session.impersonator_id);
+    if (!admin || !S.isStaff(admin) || admin.status !== 'active') fail(403, 'Admin credentials invalid');
+    const ttlMs = (Number(getSettings().impersonation_ttl_min) || 30) * 60 * 1000;
+    const newExpires = now() + ttlMs;
+    q.run('UPDATE sessions SET expires_at = ?, last_seen_at = ? WHERE id = ?', newExpires, now(), s.session.id);
+    S.audit(admin.id, 'admin.impersonate_refresh', s.user.id, { ttlMs, expiresAt: newExpires }, c.req, {
+      actor_admin_id: admin.id, subject_user_id: s.user.id
+    });
+    return { ok: true, refreshed: true, expiresAt: newExpires, ttlMs, actor: 'admin', subject: s.user.id };
+  });
   /* Return to the admin account after impersonating a user */
-  r.post('/api/auth/stop-impersonating', (c) => {
+  const handleStopImpersonate = (c) => {
     const s = c.auth;
     if (!s || !s.session.impersonator_id) fail(400, 'Not impersonating anyone');
     const admin = q.get('SELECT * FROM users WHERE id = ?', s.session.impersonator_id);
     q.run('DELETE FROM sessions WHERE id = ?', s.session.id);
     if (!admin || !S.isStaff(admin) || admin.status !== 'active') { S.clearSession(c.req, c.res); fail(403, 'Your admin account is no longer available — please sign in again'); }
     S.createSession(c.res, c.req, admin.id);
-    S.audit(admin.id, 'admin.impersonate_stop', s.user.id, { email: s.user.email }, c.req);
-    return { ok: true };
-  });
+    S.audit(admin.id, 'admin.impersonate_stop', s.user.id, { email: s.user.email, actor: 'admin', subject: s.user.id }, c.req, {
+      actor_admin_id: admin.id, subject_user_id: s.user.id
+    });
+    return { ok: true, admin_id: admin.id, subject_user_id: s.user.id, redirect: '/admin/#users/' + s.user.id };
+  };
+  r.post('/api/auth/stop-impersonating', handleStopImpersonate);
+  r.post('/api/auth/impersonate/exit', handleStopImpersonate);
 
   /* ---- wallet sign-in / register (Solana signMessage) ---- */
   r.post('/api/auth/wallet/nonce', (c) => {

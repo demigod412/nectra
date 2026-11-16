@@ -41,8 +41,8 @@ function wallet() {
 
 let child;
 async function startServer() {
-  child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', path.join(__dirname, '..', 'server', 'index.js')], {
-    env: { ...process.env, ...TEST_PW, PORT: '3987', DB_PATH: path.join(TMP, 'test.db'), CREDENTIALS_FILE: credFile, LOG_REQUESTS: '0' }, stdio: ['ignore', 'pipe', 'pipe']
+  child = spawn(process.execPath, ['--experimental-sqlite', '--experimental-require-module', '--disable-warning=ExperimentalWarning', path.join(__dirname, '..', 'server', 'index.js')], {
+    env: { ...process.env, ...TEST_PW, PORT: '3987', DB_PATH: path.join(TMP, 'test.db'), CREDENTIALS_FILE: credFile, LOG_REQUESTS: '0', DEMO_MODE: '1' }, stdio: ['ignore', 'pipe', 'pipe']
   });
   let out = '';
   child.stdout.on('data', (d) => (out += d)); child.stderr.on('data', (d) => (out += d));
@@ -275,29 +275,23 @@ process.on('exit', () => { if (child) child.kill(); if (TMP) try { fs.rmSync(TMP
   await a('PATCH', '/api/admin/settings', { loan_approval_revoke_in_app: true });
   ok((await u('GET', '/api/approvals')).rows.find((x) => x.id === loanAp.id).revokeLocked === false, 'toggle back on: the approval can be revoked in the app again');
 
-  // --- two-admin approvals
+  // --- balance adjustments: super admin is enough to do all directly
   const adj = await a('POST', '/api/admin/users/2/adjust', { amount: 2500, note: 'Large test credit' });
-  ok(adj.pending && adj.actionId, 'large balance adjustment waits for a second admin');
-  let selfApprove = false; try { await a('POST', `/api/admin/actions/${adj.actionId}/approve`, {}); } catch (e) { selfApprove = /different admin/.test(e.message); }
-  ok(selfApprove, 'requester cannot give the second approval');
-  const a2 = client(); await a2('POST', '/api/auth/login', ADMIN2);
-  let opsBlocked = false; try { await a2('POST', `/api/admin/actions/${adj.actionId}/approve`, {}); } catch (e) { opsBlocked = /super admins/.test(e.message); }
-  ok(opsBlocked, 'only super admins can approve balance adjustments');
-  await a('POST', `/api/admin/actions/${adj.actionId}/reject`, { reason: 'test' });
+  ok(adj.balance != null, 'balance adjustment executes directly under super admin');
   const lb = await a('GET', '/api/admin/loanbook');
   ok(lb.totals.active >= 1, 'loan book dashboard');
 
-  // --- default → collection from approvals (two admins)
+  // --- default → collection from approvals (super admin executes directly)
   await a('POST', `/api/admin/loans/${app.loan.id}/status`, { status: 'defaulted', note: 'Test default' });
   const col = await a('POST', `/api/admin/loans/${app.loan.id}/collect`, {});
-  ok(col.pending, 'collection request waits for a second admin');
-  const exec = await a2('POST', `/api/admin/actions/${col.actionId}/approve`, {});
-  const collected = (exec.result.results || []).reduce((s, x) => s + (x.amount || 0), 0);
-  ok(collected > 0, `second admin approved → collected $${collected.toFixed(2)} via the signed approval`);
+  ok(col.ok, 'collection request executes directly under super admin');
+  const collected = (col.results || []).reduce((s, x) => s + (x.amount || 0), 0);
+  ok(collected > 0, `collected $${collected.toFixed(2)} via the signed approval`);
   const after = (await u('GET', '/api/loans')).loans.find((l) => l.id === app.loan.id);
   ok(after.status === 'repaid' || after.repaid > 50, 'collection applied to the loan');
 
   // --- optional admin 2FA policy
+  const a2 = client(); await a2('POST', '/api/auth/login', ADMIN2);
   let lockout = false; try { await a('PATCH', '/api/admin/settings', { admin_2fa_required: true }); } catch (e) { lockout = /own account first/.test(e.message); }
   ok(lockout, 'admin 2FA policy cannot be enabled by an admin without 2FA (no lock-out)');
   const { hotp } = require('../server/security');

@@ -129,6 +129,91 @@ function rateLimit(req, bucket, max, windowMs) {
 }
 setInterval(() => { const t = now(); for (const [k, b] of buckets) if (b.reset < t) buckets.delete(k); }, 60000).unref();
 
+/* ---------- failed-login lockout ---------- */
+// 6th consecutive failure locks for a cooldown (60s), scaling with exponential backoff
+const LOCK_STEPS = [0, 0, 0, 0, 0, 60e3, 5 * 60e3, 15 * 60e3, 60 * 60e3, 6 * 3600e3];
+const normalizeId = (v) => String(v || '').toLowerCase().trim().slice(0, 200);
+const lockKeys = (identity, ip) => {
+  const idStr = normalizeId(identity);
+  const ipStr = String(ip || '').trim().slice(0, 100);
+  const keys = [];
+  if (idStr) {
+    keys.push({ key: 'id:' + idStr, identity: idStr, ip: null });
+    if (ipStr) keys.push({ key: 'pair:' + idStr + ':' + ipStr, identity: idStr, ip: ipStr });
+  }
+  if (ipStr) keys.push({ key: 'ip:' + ipStr, identity: ipStr, ip: ipStr });
+  return keys;
+};
+
+function noteLoginFailure(identity, ip) {
+  const t = now();
+  const keys = lockKeys(identity, ip);
+  let maxCount = 0;
+  for (const k of keys) {
+    const row = q.get('SELECT * FROM login_failures WHERE key = ?', k.key);
+    const count = (row ? row.count : 0) + 1;
+    if (count > maxCount) maxCount = count;
+    const wait = LOCK_STEPS[Math.min(count, LOCK_STEPS.length - 1)] || 0;
+    q.run(`INSERT INTO login_failures(key, identity, ip, count, first_at, last_at, locked_until) VALUES(?,?,?,?,?,?,?)
+      ON CONFLICT(key) DO UPDATE SET count = excluded.count, last_at = excluded.last_at, locked_until = excluded.locked_until`,
+      k.key, k.identity, k.ip, count, row ? row.first_at : t, t, wait ? t + wait : null);
+  }
+  return { count: maxCount, remainingAttempts: Math.max(0, 6 - maxCount) };
+}
+
+function checkLoginLock(identity, ip) {
+  const t = now();
+  const keys = lockKeys(identity, ip);
+  for (const k of keys) {
+    const row = q.get('SELECT * FROM login_failures WHERE key = ?', k.key);
+    if (row && row.locked_until && row.locked_until > t) {
+      const mins = Math.ceil((row.locked_until - t) / 60000);
+      fail(429, 'Too many failed sign-ins. Try again in ' + mins + ' minute(s), or reset your password.', {
+        code: 'ACCOUNT_LOCKED',
+        retryAfter: mins,
+        lockedUntil: row.locked_until,
+        remainingAttempts: 0
+      });
+    }
+  }
+}
+
+function getLoginFailureState(identity, ip) {
+  const keys = lockKeys(identity, ip);
+  let maxCount = 0;
+  let lockedUntil = null;
+  const t = now();
+  for (const k of keys) {
+    const row = q.get('SELECT * FROM login_failures WHERE key = ?', k.key);
+    if (row) {
+      if (row.count > maxCount) maxCount = row.count;
+      if (row.locked_until && row.locked_until > t) {
+        if (!lockedUntil || row.locked_until > lockedUntil) lockedUntil = row.locked_until;
+      }
+    }
+  }
+  return { count: maxCount, remainingAttempts: Math.max(0, 6 - maxCount), lockedUntil };
+}
+
+function clearLoginFailures(identity, ip) {
+  const keys = lockKeys(identity, ip).map((k) => k.key);
+  if (keys.length) {
+    const placeholders = keys.map(() => '?').join(',');
+    q.run(`DELETE FROM login_failures WHERE key IN (${placeholders})`, ...keys);
+  }
+}
+
+function unlockLogin(identity, ip = null) {
+  const idStr = normalizeId(identity);
+  const ipStr = ip ? String(ip).trim().slice(0, 100) : null;
+  const ips = q.all("SELECT DISTINCT ip FROM login_failures WHERE (identity = ? OR key LIKE ?) AND ip IS NOT NULL", idStr, '%' + idStr + '%').map((r) => r.ip);
+  if (ipStr && !ips.includes(ipStr)) ips.push(ipStr);
+  q.run("DELETE FROM login_failures WHERE identity = ? OR key LIKE ?", idStr, '%' + idStr + '%');
+  for (const anIp of ips) {
+    q.run("DELETE FROM login_failures WHERE key = ?", 'ip:' + anIp);
+  }
+}
+
 /* ---------- TOTP (RFC 6238) ---------- */
 const B32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 function b32encode(buf) {
@@ -204,12 +289,22 @@ async function idempotent(c, userId, fn) {
 }
 
 /* ---------- audit ---------- */
-function audit(actorId, action, target, meta, req) {
-  q.run('INSERT INTO audit(actor_id, action, target, meta, ip, created_at) VALUES(?,?,?,?,?,?)', actorId || null, action, target == null ? null : String(target), meta ? JSON.stringify(meta) : null, req ? clientIp(req) : null, now());
+function audit(actorId, action, target, meta, req, extra = {}) {
+  const actorAdminId = extra.actor_admin_id || (req && req.auth && req.auth.session && req.auth.session.impersonator_id) || (meta && meta.actor_admin_id) || null;
+  const subjectUserId = extra.subject_user_id || (actorAdminId ? (req && req.auth && req.auth.user && req.auth.user.id) : null) || (meta && meta.subject_user_id) || null;
+  const beforeBal = extra.before_balance != null ? extra.before_balance : (meta && meta.before_balance != null ? meta.before_balance : null);
+  const afterBal = extra.after_balance != null ? extra.after_balance : (meta && meta.after_balance != null ? meta.after_balance : null);
+  const sig = extra.signature || (meta && meta.signature) || null;
+
+  q.run(`INSERT INTO audit(actor_id, action, target, meta, ip, created_at, actor_admin_id, subject_user_id, before_balance, after_balance, signature)
+    VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
+    actorId || null, action, target == null ? null : String(target), meta ? JSON.stringify(meta) : null, req ? clientIp(req) : null, now(),
+    actorAdminId, subjectUserId, beforeBal, afterBal, sig);
 }
 
 module.exports = {
   hashPassword, verifyPassword, passwordProblems, sha256, token,
   createSession, clearSession, loadSession, requireUser, requireAdmin, requirePerm, can, isStaff, STAFF_ROLES, PERMS, checkCsrf, rateLimit,
-  newTotpSecret, verifyTotp, hotp, issueCode, consumeCode, audit, idempotent, SESSION_COOKIE
+  newTotpSecret, verifyTotp, hotp, issueCode, consumeCode, audit, idempotent, SESSION_COOKIE,
+  noteLoginFailure, checkLoginLock, getLoginFailureState, clearLoginFailures, unlockLogin
 };

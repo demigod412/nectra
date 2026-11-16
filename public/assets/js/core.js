@@ -99,9 +99,70 @@
   NX.icon = (n, cls = '') => `<svg class="ic ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${P[n] || P.info}</svg>`;
   NX.hydrateIcons = (root = document) => $$('i[data-i]', root).forEach((i) => { i.outerHTML = NX.icon(i.dataset.i, i.className); });
 
-  /* ---------- LOGO (5-petal blossom, inline SVG) ---------- */
+  /* ---------- BRANDING & WHITE-LABEL ---------- */
+  NX.brand = NX.store.get('brand', { name: 'NECTRA', logo: '', favicon: 'assets/favicon.svg' });
+  NX.applyBranding = (b) => {
+    if (!b) return;
+    const name = b.name || 'NECTRA';
+    NX.brand = b;
+    NX.store.set('brand', b);
+
+    // Update document title
+    if (document.title) {
+      if (document.title.includes('NECTRA')) {
+        document.title = document.title.replace(/NECTRA/g, name);
+      }
+    }
+
+    // Update favicon
+    if (b.favicon) {
+      let fav = $('link[rel="icon"]');
+      if (!fav) {
+        fav = document.createElement('link');
+        fav.rel = 'icon';
+        document.head.appendChild(fav);
+      }
+      fav.href = b.favicon;
+    }
+
+    // Update brand text in header, sidebar, footer
+    $$('.brand__name, [data-brand]').forEach((el) => { el.textContent = name; });
+    $$('a.brand').forEach((el) => { el.setAttribute('aria-label', `${name} home`); });
+
+    // Update mentions in text/notes
+    $$('.seed-note, .auth__lead, footer, .brand-text').forEach((el) => {
+      if (el.innerHTML && el.innerHTML.includes('NECTRA')) {
+        el.innerHTML = el.innerHTML.replace(/NECTRA/g, NX.esc(name));
+      }
+    });
+
+    // Update logos if custom logo provided
+    if (b.logo) {
+      $$('[data-logo]').forEach((el) => {
+        const sz = +el.dataset.logo || 28;
+        el.outerHTML = `<img src="${NX.esc(b.logo)}" class="logo ${el.className || ''}" style="width:${sz}px;height:${sz}px;object-fit:contain;" alt="${NX.esc(name)}" />`;
+      });
+      $$('.brand svg.logo, .auth__card svg.logo').forEach((el) => {
+        const sz = el.getAttribute('width') || 28;
+        const img = document.createElement('img');
+        img.src = b.logo;
+        img.className = el.className || 'logo';
+        img.style.cssText = `width:${sz}px;height:${sz}px;object-fit:contain;`;
+        img.alt = name;
+        el.replaceWith(img);
+      });
+    }
+  };
+
+  // Immediate cached branding
+  try { if (NX.brand && (NX.brand.name !== 'NECTRA' || NX.brand.logo)) NX.applyBranding(NX.brand); } catch (e) {}
+
+  /* ---------- LOGO (custom image or 5-petal blossom SVG fallback) ---------- */
   let logoN = 0;
   NX.logo = (size = 28, cls = '') => {
+    if (NX.brand && NX.brand.logo) {
+      return `<img src="${NX.esc(NX.brand.logo)}" class="logo ${cls}" style="width:${size}px;height:${size}px;object-fit:contain;" alt="${NX.esc(NX.brand.name || 'Brand')}" />`;
+    }
     const id = 'nxl' + ++logoN;
     const petals = [0, 72, 144, 216, 288].map((a) => `<path transform="rotate(${a} 50 50)" d="M50 48C38.5 41 35 23 50 7c15 16 11.5 34 0 41z" fill="url(#${id}g)"/>`).join('');
     return `<svg class="logo ${cls}" width="${size}" height="${size}" viewBox="0 0 100 100" aria-hidden="true"><defs><linearGradient id="${id}g" x1="50" y1="7" x2="50" y2="48" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#FFA9CF"/><stop offset=".5" stop-color="#F2559A"/><stop offset="1" stop-color="#B21F66"/></linearGradient><radialGradient id="${id}c"><stop offset="0" stop-color="#FFFFFF"/><stop offset=".45" stop-color="#FFC4DF"/><stop offset="1" stop-color="#F2559A" stop-opacity="0"/></radialGradient></defs><g class="logo__petals">${petals}</g><circle class="logo__glow" cx="50" cy="50" r="15" fill="url(#${id}c)"/><circle cx="50" cy="50" r="4.5" fill="#FFF1F7"/></svg>`;
@@ -684,7 +745,8 @@
       if (a === 'swap') openSwap();
       if (a === 'kill') NX.killSwitch();
       if (a === 'logout') NX.logout();
-      if (a === 'stop-impersonate') NX.act(t.closest('[data-action]'), () => NX.post('/api/auth/stop-impersonating')).then((r) => { if (r) location.href = '/admin/'; });
+      if (a === 'stop-impersonate' || a === 'exit-impersonate') NX.act(t.closest('[data-action]'), () => NX.post('/api/auth/stop-impersonating')).then((r) => { if (r) location.href = (r.redirect || ('/admin/#users/' + (NX.data.user ? NX.data.user.id : ''))); });
+      if (a === 'refresh-impersonate') NX.act(t.closest('[data-action]'), () => NX.post('/api/auth/impersonate/refresh')).then((r) => { if (r) NX.toast('Session renewed (30 min TTL)'); });
     }
     // internal link transitions
     const a = t.closest('a[href]');
@@ -748,6 +810,12 @@
 
   /* ---------- BOOT ---------- */
   NX.boot = async () => {
+    try {
+      const cfg = await NX.get('/api/public/config');
+      if (cfg) NX.applyBranding(cfg);
+    } catch (e) {
+      if (NX.brand) NX.applyBranding(NX.brand);
+    }
     try { const ic = await NX.get('/api/icons'); NX.icons = { tokens: new Set(ic.tokens), wallets: new Set(ic.wallets) }; } catch (e) { /* fallback to colored initials */ }
     if (document.body.classList.contains('app')) {
       try { await NX.bootstrap(); } catch (e) { if (e.status !== 401 && e.data && e.data.code !== 'EMAIL_UNVERIFIED') document.body.insertAdjacentHTML('afterbegin', `<div class="note note--danger" style="margin:16px">${NX.icon('alert')}<span>${NX.esc(e.message)} — is the NECTRA server running?</span></div>`); return; }
@@ -755,9 +823,16 @@
       buildShell(); startPrices();
       if (NX.data.impersonatedBy) {
         document.body.classList.add('impersonating');
-        document.body.insertAdjacentHTML('afterbegin', `<div class="imp-bar" role="status">${NX.icon('eye')}<span>Viewing as <b>${NX.esc(NX.data.user.email || NX.data.user.name)}</b> — you’re ${NX.esc(NX.data.impersonatedBy)}. Actions you take are performed as this user and are logged.</span><button data-action="stop-impersonate">Exit to admin</button></div>`);
+        document.body.insertAdjacentHTML('afterbegin', `<div class="imp-bar" role="status">${NX.icon('eye')}<span>Viewing as <b>${NX.esc(NX.data.user.email || NX.data.user.name)}</b> — you’re ${NX.esc(NX.data.impersonatedBy)}. Actions you take are performed as this user and are logged.</span><button data-action="refresh-impersonate" class="btn btn--sm mr-8">Refresh Session (30m)</button><button data-action="stop-impersonate" id="nx-exit-impersonation" class="btn btn--sm">Exit to Admin</button></div>`);
         NX.hydrateIcons(document.querySelector('.imp-bar'));
       }
+      try {
+        NX.get('/api/health').then((h) => {
+          if (h && h.banner && h.banner.active) {
+            document.querySelector('main')?.insertAdjacentHTML('afterbegin', `<div class="note note--danger mb-16">${NX.icon('alert')}<span><b>System Alert:</b> ${NX.esc(h.banner.message)}</span></div>`);
+          }
+        }).catch(() => {});
+      } catch (e) {}
       if (NX.data.settings.maintenance_banner) document.querySelector('main').insertAdjacentHTML('afterbegin', `<div class="note note--warn mb-16">${NX.icon('alert')}<span>${NX.esc(NX.data.settings.maintenance_banner)}</span></div>`);
       NX.maybePromptTerms();
       if (NX.data.settings.demo_mode) document.querySelector('.sidebar__foot').insertAdjacentHTML('afterbegin', `<div class="sidebar__card"><span class="tag tag--amber">${NX.icon('info')} Demo mode</span><span>Codes are shown on screen and chain actions without a connected wallet are simulated.</span></div>`);

@@ -1,0 +1,29 @@
+[Unit]
+Description=NECTRA Platform Supervisor (Web & Bot Runner)
+After=network.target
+
+[Service]
+Type=simple
+User=nectra
+WorkingDirectory=/var/www/nectra-platform
+ExecStart=/usr/bin/node scripts/supervisor.js
+Restart=always
+RestartSec=5s
+
+# Start limits: max 5 restarts in 60 seconds
+StartLimitIntervalSec=60s
+StartLimitBurst=5
+
+# Environment
+Environment=NODE_ENV=production
+Environment=PORT=3000
+Environment=SEPARATE_BOT_PROCESS=1
+
+# Process management
+KillMode=mixed
+TimeoutStopSec=15s
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

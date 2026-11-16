@@ -29,10 +29,16 @@ function normalizeXpub(x) {
   const sum = crypto.createHash('sha256').update(crypto.createHash('sha256').update(payload).digest()).digest().subarray(0, 4);
   return bs58check.encode(Buffer.concat([payload, sum]));
 }
-/** Account xpub: env (admin-held) or, in development only, a generated test key flagged as such */
+/** Account xpub: settings / env (admin-held) or, in development only, a generated test key flagged as such */
 function accountNode(asset) {
   const n = NET[asset];
-  const configured = process.env[n.env];
+  let settingVal = '';
+  try {
+    const { getSettings } = require('../db');
+    const s = getSettings ? getSettings() : {};
+    settingVal = asset === 'BTC' ? s.btc_collateral_xpub : s.ltc_collateral_xpub;
+  } catch (e) {}
+  const configured = settingVal || process.env[n.env];
   if (configured) return { node: bip32.fromBase58(normalizeXpub(configured), { ...n.network, bip32: { public: 0x0488b21e, private: 0x0488ade4 } }), dev: false };
   const seedHex = vault.secret(`dev_${asset.toLowerCase()}_seed`, () => crypto.randomBytes(32).toString('hex'));
   return { node: bip32.fromSeed(Buffer.from(seedHex, 'hex'), n.network).derivePath(asset === 'BTC' ? "m/84'/0'/0'" : "m/84'/2'/0'").neutered(), dev: true };
@@ -45,10 +51,14 @@ function depositAddress(asset, index) {
 }
 /** Confirmed + mempool balance from an Esplora API */
 async function addressBalance(asset, address) {
-  const r = await (await fetch(`${NET[asset].api}/address/${address}`)).json();
-  const conf = (r.chain_stats.funded_txo_sum - r.chain_stats.spent_txo_sum) / 1e8;
-  const pending = (r.mempool_stats.funded_txo_sum - r.mempool_stats.spent_txo_sum) / 1e8;
-  return { confirmed: conf, pending, txCount: r.chain_stats.tx_count };
+  try {
+    const r = await (await fetch(`${NET[asset].api}/address/${address}`)).json();
+    const conf = (r.chain_stats.funded_txo_sum - r.chain_stats.spent_txo_sum) / 1e8;
+    const pending = (r.mempool_stats.funded_txo_sum - r.mempool_stats.spent_txo_sum) / 1e8;
+    return { confirmed: conf, pending, txCount: r.chain_stats.tx_count };
+  } catch (e) {
+    return { confirmed: 0, pending: 0, txCount: 0 };
+  }
 }
 const isAddress = (asset, a) => { try { bitcoin.address.toOutputScript(a, NET[asset].network); return true; } catch (e) { return false; } };
 

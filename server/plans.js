@@ -136,7 +136,10 @@ function subscribe(userId, planId, { interval = 'monthly', by = null } = {}) {
     const e = new Error(`Not enough account balance: this costs $${qt.charge.toFixed(2)}${qt.credit ? ` after a $${qt.credit.toFixed(2)} credit for your current plan` : ''}. Pay with crypto, or ask an admin to credit your balance.`); e.status = 400; throw e;
   }
   tx(() => {
-    if (qt.charge > 0) q.run('INSERT INTO ledger(user_id, amount, kind, ref, note, created_by, created_at) VALUES(?,?,?,?,?,?,?)', userId, -qt.charge, 'subscription', 'plan:' + plan.slug, `Subscription — ${plan.name} (${qt.interval})${qt.credit ? ` · incl. $${qt.credit.toFixed(2)} proration credit` : ''}`, by, now());
+    if (qt.charge > 0) {
+      q.run('INSERT INTO ledger(user_id, amount, kind, ref, note, created_by, created_at) VALUES(?,?,?,?,?,?,?)', userId, -qt.charge, 'subscription', 'plan:' + plan.slug, `Subscription — ${plan.name} (${qt.interval})${qt.credit ? ` · incl. $${qt.credit.toFixed(2)} proration credit` : ''}`, by, now());
+      require('./referrals').accrue(userId, 'subscription', 'plan:' + plan.slug + ':' + now(), qt.charge);
+    }
     if (qt.surplus > 0) q.run('INSERT INTO ledger(user_id, amount, kind, ref, note, created_by, created_at) VALUES(?,?,?,?,?,?,?)', userId, qt.surplus, 'plan_credit', 'plan:' + plan.slug, `Unused plan credit from your previous subscription`, by, now());
     activate(userId, plan, { method: 'account balance', ref: 'plan:' + plan.slug, autoRenew: true, interval });
   });
@@ -174,6 +177,7 @@ function runRenewals() {
     }
     tx(() => {
       q.run('INSERT INTO ledger(user_id, amount, kind, ref, note, created_by, created_at) VALUES(?,?,?,?,?,?,?)', s.user_id, -s.price_usd, 'subscription', 'renew:' + plan.slug, `Renewal — ${plan.name}`, null, at);
+      require('./referrals').accrue(s.user_id, 'subscription', 'renew:' + plan.slug + ':' + at, s.price_usd);
       q.run('UPDATE subscriptions SET renews_at = ?, started_at = ? WHERE id = ?', at + periodMs(s.interval), at, s.id);
     });
     notify(s.user_id, 'transfer', `${plan.name} renewed`, `$${s.price_usd.toFixed(2)} charged from your account balance.`, 'plans.html');

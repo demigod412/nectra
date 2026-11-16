@@ -375,6 +375,9 @@ function markDisbursed(l, { method, ref, by }) {
     q.run("UPDATE loans SET status = 'disbursed', disbursed_at = ?, disburse_ref = ?, disburse_method = ?, disburse_sig = ?, updated_at = ? WHERE id = ?", at, ref, method, method === 'ledger' ? null : ref, at, l.id);
     createSchedule({ ...l, disbursed_at: at });
     q.run('INSERT INTO transactions(user_id, type, token, amount, status, signature, simulated, confirmations, note, created_at, updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)', l.user_id, 'Loan', l.asset, l.amount, 'confirmed', method === 'ledger' ? null : ref, 0, 32, `Disbursement · loan #${l.id} · ${method === 'ledger' ? 'account balance' : 'on-chain'} · ${ref}`, at, at);
+    // B1: Accrue referral commission inside the same transaction as the loan interest event
+    const interestBasis = M.fromCents(M.interestCents(l.amount, l.apr, l.term_days));
+    require('./referrals').accrue(l.user_id, 'loan_interest', 'loan:' + l.id, interestBasis);
     return true;
   });
   if (!done) return false;

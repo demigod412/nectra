@@ -38,6 +38,7 @@ let feed = 'simulated', pythIds = {}, pythFailures = 0;
 function seeded(seed) { let s = seed | 0 || 1; return () => { s ^= s << 13; s ^= s >>> 17; s ^= s << 5; return (s >>> 0) / 4294967296; }; }
 
 function initSynthetic() {
+  if (state.size > 0) return;
   const t0 = Math.floor(Date.now() / STEP) * STEP - (POINTS - 1) * STEP;
   TOKENS.forEach((t, k) => {
     const r = seeded(1000 + k * 97);
@@ -47,6 +48,7 @@ function initSynthetic() {
     state.set(t.sym, { ...t, hist, histStart: t0, price: t.price, live: false });
   });
 }
+initSynthetic();
 
 /** Replace synthetic history with real hourly candles (interpolated to 5-minute steps) */
 async function loadRealHistory() {
@@ -126,7 +128,15 @@ async function pollLive() {
   if (feed === 'pyth') { if (await pollPyth()) return; }
   const ok = await pollJupiter();
   await pollGecko();
+  const was = feed;
   feed = ok ? 'jupiter+coingecko' : jupFailures > 5 ? 'simulated' : feed;
+  if (feed !== was && feed === 'simulated') {
+    console.warn('  PRICE FEED DOWN - every token is simulated. Live bots will refuse to trade.');
+    require('./events').notifyAdmins('security', 'Price feed down', 'All prices are simulated. Live bots are skipping trades until it recovers.', '/admin/#status');
+  } else if (feed !== was) {
+    console.log('  Price feed recovered: ' + feed);
+    require('./events').notifyAdmins('security', 'Price feed recovered', 'Feed is live again (' + feed + ').', '/admin/#status');
+  }
 }
 
 function simulate() {
@@ -148,11 +158,66 @@ function roll() {
 
 function change24h(sym) { const s = state.get(sym); const ref = s.hist[POINTS - 1 - 288]; return ref ? ((s.price - ref) / ref) * 100 : 0; }
 const price = (sym) => (state.get(sym) ? state.get(sym).price : sym === 'USD' ? 1 : 0);
-const tokens = () => [...state.values()].map((s) => ({ sym: s.sym, name: s.name, color: s.color, price: s.price, ch: change24h(s.sym), live: !!s.live }));
+const tokens = () => [...state.values()].map((s) => ({ sym: s.sym, name: s.name, color: s.color, price: s.price, ch: change24h(s.sym), live: !!s.live, provenance: provenanceOf(s.sym) }));
 const exists = (sym) => state.has(sym);
 /** ms since this token last got a real (non-simulated) price; Infinity if it never has */
 const priceAge = (sym) => { const s = state.get(sym); return s && s.live && s.at ? Date.now() - s.at : Infinity; };
-const source = () => ({ feed, realHistory: [...state.values()].some((s) => s.realHistory) });
+const STALE_MS = () => {
+  const envVal = Number(process.env.PRICE_STALE_SEC);
+  if (Number.isFinite(envVal) && envVal > 0) return envVal * 1000;
+  try {
+    const s = require('./db').getSettings();
+    if (s && s.price_stale_sec > 0) return Number(s.price_stale_sec) * 1000;
+  } catch (e) {}
+  return 90 * 1000;
+};
+
+/** Provenance of a specific token price: 'live' | 'simulated' | 'stale' */
+function provenanceOf(sym) {
+  if (sym === 'USD') return 'live';
+  const s = state.get(sym);
+  if (!s) return 'unknown';
+  if (SIM_ONLY || feed === 'simulated' || feed === 'simulated-forced' || !s.live) return 'simulated';
+  const age = priceAge(sym);
+  if (age > STALE_MS()) return 'stale';
+  return 'live';
+}
+
+function priceInfo(sym) {
+  const s = state.get(sym);
+  return {
+    sym,
+    price: price(sym),
+    provenance: provenanceOf(sym),
+    at: s && s.at ? s.at : null,
+    ageMs: priceAge(sym)
+  };
+}
+
+/** Feed health. degraded = any simulated token, or newest real tick older than the threshold. */
+const source = () => {
+  const all = [...state.values()];
+  const sim = all.filter((s) => s.vol && (!s.live || feed.includes('simulated'))).map((s) => s.sym);
+  const stamps = all.filter((s) => s.at).map((s) => s.at);
+  const lastLive = stamps.length ? Math.max(...stamps) : null;
+  const stale = lastLive ? Date.now() - lastLive : Infinity;
+  const degraded = SIM_ONLY || feed.includes('simulated') || sim.length > 0 || stale > STALE_MS();
+  const provenance = (SIM_ONLY || feed.includes('simulated') || !lastLive) ? 'simulated' : stale > STALE_MS() ? 'stale' : 'live';
+
+  return {
+    feed,
+    provenance,
+    realHistory: all.some((s) => s.realHistory),
+    simulated: sim,
+    lastLiveTimestamp: lastLive,
+    staleMs: stale === Infinity ? null : stale,
+    thresholdMs: STALE_MS(),
+    degraded,
+    reason: SIM_ONLY ? 'PRICE_FEED=sim' : feed.includes('simulated') ? 'price APIs offline (simulated fallback)'
+      : sim.length ? 'simulated prices for ' + sim.join(', ')
+      : stale > STALE_MS() ? 'newest real tick is ' + Math.round(stale / 1000) + 's old (threshold ' + (STALE_MS() / 1000) + 's)' : null
+  };
+};
 
 function series(sym, range = '1D', n = 96) {
   const s = state.get(sym);
@@ -186,4 +251,4 @@ function start() {
   return Promise.race([boot, new Promise((r) => setTimeout(r, 15000))]);
 }
 
-module.exports = { start, price, priceAge, tokens, series, closes, exists, change24h, source, TOKENS, seeded };
+module.exports = { start, price, priceInfo, provenanceOf, priceAge, tokens, series, closes, exists, change24h, source, TOKENS, seeded };
