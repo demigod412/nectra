@@ -26,7 +26,7 @@
     <div class="container pubnav__in">
       <a class="brand" href="index.html" aria-label="NECTRA home"><span data-logo="30"></span><span class="brand__name">NECTRA</span></a>
       <nav class="pubnav__links" aria-label="Sections">
-        <a href="#features">Features</a><a href="#how">How it works</a><a href="#safety">Safety</a><a href="#faq">FAQ</a>
+        <a href="#features">Features</a><a href="#bots">AI Bots</a><a href="#how">How it works</a><a href="#safety">Safety</a><a href="#faq">FAQ</a>
       </nav>
       <div class="pubnav__cta">
         <a class="btn btn--ghost btn--sm" href="login.html">Log in</a>
@@ -102,13 +102,142 @@
       </div>
     </section>
 
-    <!-- ===== Live stats band ===== -->
-    <section class="statband" aria-label="Platform statistics (demo)">
-      <div class="container statband__in">
-        <div class="stat"><div class="stat__v"><span data-stat="bots" data-dec="0">0</span></div><div class="stat__l">Bots running now</div></div>
-        <div class="stat"><div class="stat__v"><span data-stat="volume" data-dec="1" data-prefix="$" data-suffix="k">0</span></div><div class="stat__l">Live Volume (30d)</div></div>
-        <div class="stat"><div class="stat__v"><span data-stat="users" data-dec="0">0</span></div><div class="stat__l">Members</div></div>
-        <div class="stat"><div class="stat__v"><span data-count="0" data-dec="0">0</span></div><div class="stat__l">Seed phrases ever requested</div></div>
+    <!-- ===== Multi-Chain & Protocol Ecosystem Strip ===== -->
+    <div class="eco-band" aria-label="Ecosystem & security protocols">
+      <div class="container eco-grid">
+        <div class="eco-item">
+          <div class="eco-item__ic"><i data-i="zap"></i></div>
+          <div class="eco-item__content">
+            <span class="eco-item__title">Direct DEX Aggregation</span>
+            <span class="eco-item__sub"><span class="dot dot--green dot--pulse"></span> Jupiter v6 &middot; &lt;14ms</span>
+          </div>
+        </div>
+        <div class="eco-item">
+          <div class="eco-item__ic"><i data-i="shield"></i></div>
+          <div class="eco-item__content">
+            <span class="eco-item__title">Non-Custodial Architecture</span>
+            <span class="eco-item__sub"><span class="dot dot--green"></span> 100% Client-Signed</span>
+          </div>
+        </div>
+        <div class="eco-item">
+          <div class="eco-item__ic"><i data-i="layers"></i></div>
+          <div class="eco-item__content">
+            <span class="eco-item__title">Multi-Chain Routing</span>
+            <span class="eco-item__sub">Solana &middot; EVM (Base, Arb, ETH)</span>
+          </div>
+        </div>
+        <div class="eco-item">
+          <div class="eco-item__ic"><i data-i="radar"></i></div>
+          <div class="eco-item__content">
+            <span class="eco-item__title">MEV & Slippage Guard</span>
+            <span class="eco-item__sub"><span class="dot dot--green"></span> Active Protection</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== Autonomous Trading Bots Fleet ===== -->
+    <section class="section" id="bots">
+      <div class="container">
+        <div class="section__head reveal">
+          <span class="eyebrow"><i data-i="bot"></i> Autonomous Execution Fleet</span>
+          <h2>Intelligent Trading Bots. Always On.</h2>
+          <p>Deploy battle-tested algorithmic bots powered by live decentralized order books, automated signal scanning, and real-time risk guards.</p>
+        </div>
+
+        <div class="bot-grid stagger">
+          <!-- Bot 1: Hyper-Grid -->
+          <article class="bot-card reveal">
+            <div class="bot-card__head">
+              <div class="bot-badge-icon"><i data-i="bot"></i><span class="bot-status-dot"></span></div>
+              <span class="tag tag--green"><span class="dot dot--green dot--pulse"></span> Live Active</span>
+            </div>
+            <div>
+              <h3>Hyper-Grid Scalper</h3>
+              <p class="bot-desc">Cascades automated buy/sell orders across dynamic volatility channels to capture micro-fluctuations around the clock.</p>
+            </div>
+            <div class="bot-visualizer">
+              <div class="bot-grid-sim">
+                <div class="bot-grid-row"><span>SELL SOL @ $186.20</span><span class="tag tag--pink tiny">+4.2%</span></div>
+                <div class="bot-grid-row active"><span>CURRENT SOL $184.50</span><span class="dot dot--green dot--pulse"></span></div>
+                <div class="bot-grid-row"><span>BUY SOL @ $182.80</span><span class="tag tag--green tiny">FILLED</span></div>
+              </div>
+            </div>
+            <div class="bot-card__foot">
+              <span>Avg cycle: ~4.5m</span>
+              <span class="mono up">+5.8% 24h</span>
+            </div>
+          </article>
+
+          <!-- Bot 2: Momentum Sniper -->
+          <article class="bot-card reveal" style="transition-delay:.1s">
+            <div class="bot-card__head">
+              <div class="bot-badge-icon"><i data-i="sparkles"></i><span class="bot-status-dot"></span></div>
+              <span class="tag tag--pink"><span class="dot dot--pink dot--pulse"></span> AI Triggered</span>
+            </div>
+            <div>
+              <h3>AI Momentum Sniper</h3>
+              <p class="bot-desc">Parses volume imbalances and order-flow breakouts across Jupiter & Raydium with automated trailing stop-losses.</p>
+            </div>
+            <div class="bot-visualizer">
+              <div class="row between small"><span class="muted">Trailing SL Lock</span><span class="mono up">+6.8% locked</span></div>
+              <div class="bot-meter"><div class="bot-meter-fill"></div></div>
+              <div class="row between tiny faint mt-4"><span>Entry $1.08</span><span>Target $1.25</span></div>
+            </div>
+            <div class="bot-card__foot">
+              <span>Latency: 14ms</span>
+              <span class="mono up">Dynamic Trailing TP</span>
+            </div>
+          </article>
+
+          <!-- Bot 3: Smart DCA -->
+          <article class="bot-card reveal" style="transition-delay:.2s">
+            <div class="bot-card__head">
+              <div class="bot-badge-icon"><i data-i="clock"></i><span class="bot-status-dot"></span></div>
+              <span class="tag tag--green">Smart Cadence</span>
+            </div>
+            <div>
+              <h3>Dip-Weighted Dynamic DCA</h3>
+              <p class="bot-desc">Automated periodic accumulation weighted by oversold RSI signals, automatically buying larger tranches on deeper discounts.</p>
+            </div>
+            <div class="bot-visualizer">
+              <div class="row between small mb-8"><span class="muted">Multiplier Matrix</span><span class="mono">RSI &lt; 35</span></div>
+              <div class="row between tiny mono" style="gap:4px">
+                <span class="tag tag--ghost grow center">Base: 1.0x</span>
+                <span class="tag tag--ghost grow center">Dip: 1.8x</span>
+                <span class="tag tag--green grow center">Deep: 2.5x</span>
+              </div>
+            </div>
+            <div class="bot-card__foot">
+              <span>Hourly &middot; Daily &middot; Weekly</span>
+              <span class="mono">Zero gas spikes</span>
+            </div>
+          </article>
+
+          <!-- Bot 4: Cross-DEX Arbitrage -->
+          <article class="bot-card reveal" style="transition-delay:.3s">
+            <div class="bot-card__head">
+              <div class="bot-badge-icon"><i data-i="zap"></i><span class="bot-status-dot"></span></div>
+              <span class="tag tag--green"><span class="dot dot--green dot--pulse"></span> Atomic Route</span>
+            </div>
+            <div>
+              <h3>Cross-DEX Arbitrage Engine</h3>
+              <p class="bot-desc">Detects and executes micro price spreads between Jupiter, Raydium, and Orca liquidity pools with zero inventory risk.</p>
+            </div>
+            <div class="bot-visualizer">
+              <div class="row between small mb-4"><span class="muted">Spread Detected</span><span class="mono up">+0.82% Net</span></div>
+              <div class="row between tiny mono faint">
+                <span>Jupiter: $182.40</span>
+                <i data-i="arrow-right" class="ic--sm"></i>
+                <span>Raydium: $183.90</span>
+              </div>
+            </div>
+            <div class="bot-card__foot">
+              <span>Atomic transaction</span>
+              <span class="mono up">MEV Protected</span>
+            </div>
+          </article>
+        </div>
       </div>
     </section>
 

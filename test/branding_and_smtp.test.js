@@ -23,21 +23,24 @@ test('White-label platform branding & dynamic adoption', async () => {
   assert.ok(coreJs.includes('/nectra/gi'));
   assert.ok(coreJs.includes('buildShell'));
 
-  // Verify pages.js dynamic brandName usage
+  // Verify pages.js dynamic brandName usage and dynamic portfolio
   const pagesJs = fs.readFileSync(path.join(__dirname, '../public/assets/js/pages.js'), 'utf8');
   assert.ok(pagesJs.includes('NX.brandName()'));
-  assert.ok(pagesJs.includes('BASE_PORTFOLIO = 284500'));
+  assert.ok(pagesJs.includes('getDynamicPortfolioBase'));
+  assert.ok(pagesJs.includes('BASE_PORTFOLIO = getDynamicPortfolioBase()'));
 
   // Restore
   if (current) setSetting('platform_name', current);
 });
 
-test('Landing page markup reflects Live Trading', () => {
+test('Landing page markup reflects Live Trading and Bot Fleet', () => {
   const indexHtml = fs.readFileSync(path.join(__dirname, '../public/index.html'), 'utf8');
   assert.ok(indexHtml.includes('Live autonomous AI trading'));
   assert.ok(indexHtml.includes('Live Trading'));
   assert.ok(indexHtml.includes('Live portfolio · High-frequency AI execution'));
-  assert.ok(indexHtml.includes('Live Volume (30d)'));
+  assert.ok(indexHtml.includes('Autonomous Execution Fleet'));
+  assert.ok(indexHtml.includes('Hyper-Grid Scalper'));
+  assert.ok(indexHtml.includes('eco-band'));
   assert.ok(!indexHtml.includes('Paper trading by default'));
 });
 

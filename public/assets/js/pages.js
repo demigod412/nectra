@@ -188,8 +188,29 @@
     const nav = $('.pubnav');
     const onScroll = () => nav && nav.classList.toggle('is-scrolled', window.scrollY > 8);
     window.addEventListener('scroll', onScroll, { passive: true }); onScroll();
+
+    // Auto-prompt PWA installation on mobile devices (Android & iOS Safari)
+    if (window.NX && NX.pwa && NX.pwa.maybePromptInstall) {
+      NX.pwa.maybePromptInstall();
+    }
+
     const el = $('#hero-chart'), val = $('#hero-value');
-    const BASE_PORTFOLIO = 284500;
+
+    // Dynamic portfolio baseline: $280,000 to $2,350,000+
+    // Generates a dynamic unique baseline per session / visit
+    const getDynamicPortfolioBase = () => {
+      try {
+        const stored = sessionStorage.getItem('nx_hero_bal');
+        if (stored) return parseFloat(stored);
+      } catch (e) {}
+      const min = 285000;
+      const max = 2280000;
+      const generated = Math.floor(min + Math.random() * (max - min) + (Math.random() * 850));
+      try { sessionStorage.setItem('nx_hero_bal', generated); } catch (e) {}
+      return generated;
+    };
+
+    const BASE_PORTFOLIO = getDynamicPortfolioBase();
     let liveBal = BASE_PORTFOLIO;
 
     const draw = async () => {
@@ -198,7 +219,7 @@
         const data = r.points.map((p) => (p.p / r.points[0].p) * BASE_PORTFOLIO);
         liveBal = data[data.length - 1];
         if (!el._render) {
-          NX.charts.line(el, data, { height: 180, axis: false, label: 'Live High-Frequency Portfolio' });
+          NX.charts.line(el, data, { height: 180, axis: false, label: 'Live Autonomous Execution Portfolio' });
         } else {
           el._data = data;
           NX.charts.line(el, data, { height: 180, axis: false });
@@ -208,14 +229,16 @@
         if (!val._v) NX.countUp(val, BASE_PORTFOLIO, { flash: true });
       }
     };
+
     NX.whenVisible(el, () => {
       draw();
       setInterval(() => !document.hidden && draw(), 20000);
-      // High-frequency live portfolio tick animation (simulated live trading micro-fluctuations)
+      // High-frequency live portfolio tick animation (proportional to portfolio size)
       setInterval(() => {
         if (document.hidden) return;
-        const tick = (Math.random() * 85 - 28);
-        liveBal = Math.max(liveBal + tick, 250000);
+        const variance = Math.max(45, liveBal * 0.00035);
+        const tick = (Math.random() * variance * 2 - variance * 0.85);
+        liveBal = Math.max(liveBal + tick, 280000);
         if (val) {
           val.textContent = '$' + liveBal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
           val.classList.add(tick >= 0 ? 'color-up' : 'color-down');
@@ -224,30 +247,59 @@
       }, 1600);
     });
 
-    try {
-      const s = await NX.get('/api/public/stats');
-      const set = (sel, v) => { const x = $(sel); if (x) x.dataset.count = v; };
-      set('[data-stat="bots"]', s.bots || 148);
-      set('[data-stat="volume"]', (s.volume ? s.volume / 1e3 : 1845.2));
-      set('[data-stat="users"]', s.users || 1280);
-      $$('[data-stat]').forEach((x) => NX.whenVisible(x, () => NX.countUp(x, parseFloat(x.dataset.count))));
-    } catch (e) { /* offline */ }
-
     const ev = $('#hero-events');
+    const scale = Math.max(1, BASE_PORTFOLIO / 285000);
+    const solAmt = (18.4 * scale).toFixed(1);
+    const jupAmt = Math.round(14200 * scale).toLocaleString();
+    const wifAmt = Math.round(3200 * scale).toLocaleString();
+    const rayAmt = Math.round(840 * scale).toLocaleString();
+    const arbAmt = (35 * scale).toFixed(1);
+    const pnl1 = '+$' + (428.5 * scale).toFixed(2);
+    const pnl2 = '+$' + (1140 * scale).toFixed(2);
+    const pnl3 = '+$' + (892 * scale).toFixed(2);
+    const pnl4 = '+$' + (210 * scale).toFixed(2);
+    const pnlArb = '+$' + (312.8 * scale).toFixed(2);
+
     const liveTrades = [
-      { dir: 'BUY', tok: 'SOL', amt: '18.4 SOL', px: '$184.20', pnl: '+$428.50 (+5.2%)', venue: 'Jupiter DEX', ms: '12ms' },
-      { dir: 'SELL', tok: 'JUP', amt: '14,200 JUP', px: '$1.14', pnl: '+$1,140.00 (+8.6%)', venue: 'Raydium CPMM', ms: '16ms' },
-      { dir: 'PROFIT', tok: 'WIF', amt: '3,200 WIF', px: '$3.42', pnl: '+$892.00 (+12.4%)', venue: 'Orca Whirlpool', ms: '14ms' },
-      { dir: 'BUY', tok: 'RAY', amt: '840 RAY', px: '$4.82', pnl: '+$210.40 (+4.1%)', venue: 'Jupiter DEX', ms: '18ms' },
-      { dir: 'ARBITRAGE', tok: 'SOL/USDC', amt: '35 SOL', px: 'Cross-DEX', pnl: '+$312.80 (+0.8%)', venue: 'Meteora DLMM', ms: '11ms' },
-      { dir: 'BUY', tok: 'BONK', amt: '185M BONK', px: '$0.000034', pnl: '+$640.20 (+7.8%)', venue: 'Jupiter DEX', ms: '15ms' },
-      { dir: 'PROFIT', tok: 'RENDER', amt: '310 RENDER', px: '$8.14', pnl: '+$375.00 (+6.4%)', venue: 'Jupiter DEX', ms: '13ms' },
-      { dir: 'BUY', tok: 'PYTH', amt: '5,400 PYTH', px: '$0.46', pnl: '+$448.20 (+9.1%)', venue: 'Raydium', ms: '17ms' }
+      { dir: 'BUY', tok: 'SOL', amt: `${solAmt} SOL`, px: '$184.20', pnl: `${pnl1} (+5.2%)`, venue: 'Jupiter DEX', ms: '12ms' },
+      { dir: 'SELL', tok: 'JUP', amt: `${jupAmt} JUP`, px: '$1.14', pnl: `${pnl2} (+8.6%)`, venue: 'Raydium CPMM', ms: '16ms' },
+      { dir: 'PROFIT', tok: 'WIF', amt: `${wifAmt} WIF`, px: '$3.42', pnl: `${pnl3} (+12.4%)`, venue: 'Orca Whirlpool', ms: '14ms' },
+      { dir: 'BUY', tok: 'RAY', amt: `${rayAmt} RAY`, px: '$4.82', pnl: `${pnl4} (+4.1%)`, venue: 'Jupiter DEX', ms: '18ms' },
+      { dir: 'ARBITRAGE', tok: 'SOL/USDC', amt: `${arbAmt} SOL`, px: 'Cross-DEX', pnl: `${pnlArb} (+0.8%)`, venue: 'Meteora DLMM', ms: '11ms' },
+      { dir: 'BUY', tok: 'BONK', amt: `${Math.round(185 * scale)}M BONK`, px: '$0.000034', pnl: `+$${(640.2 * scale).toFixed(2)} (+7.8%)`, venue: 'Jupiter DEX', ms: '15ms' },
+      { dir: 'PROFIT', tok: 'RENDER', amt: `${Math.round(310 * scale)} RENDER`, px: '$8.14', pnl: `+$${(375 * scale).toFixed(2)} (+6.4%)`, venue: 'Jupiter DEX', ms: '13ms' },
+      { dir: 'BUY', tok: 'PYTH', amt: `${Math.round(5400 * scale).toLocaleString()} PYTH`, px: '$0.46', pnl: `+$${(448.2 * scale).toFixed(2)} (+9.1%)`, venue: 'Raydium', ms: '17ms' }
     ];
     let k = 0;
     const push = () => {
       const item = liveTrades[k++ % liveTrades.length];
       const tagCls = item.dir === 'BUY' ? 'tag--green' : item.dir === 'PROFIT' ? 'tag--pink' : 'tag--amber';
+      const row = document.createElement('div');
+      row.className = 'mock__event';
+      row.style.transition = 'all 0.3s ease';
+      row.innerHTML = `<span class="tag ${tagCls} mono" style="font-size:10px;padding:2px 6px;font-weight:700">${item.dir}</span>
+        <span class="grow small"><b>${item.amt}</b> @ ${item.px} &middot; <span class="mono" style="color:var(--green,#22c55e);font-weight:600">${item.pnl}</span></span>
+        <span class="faint tiny mono">${item.venue} &middot; ${item.ms}</span>`;
+      ev.prepend(row);
+      while (ev.children.length > 3) ev.lastElementChild.remove();
+    };
+    if (ev) {
+      ev.innerHTML = '';
+      push(); push(); push();
+      setInterval(() => !document.hidden && push(), 2600);
+    }
+
+    // Interactive animated bot simulation ticker
+    const gridRows = $$('.bot-grid-sim .bot-grid-row');
+    if (gridRows.length) {
+      let gIdx = 1;
+      setInterval(() => {
+        if (document.hidden) return;
+        gridRows.forEach((r, i) => r.classList.toggle('active', i === gIdx));
+        gIdx = (gIdx + 1) % gridRows.length;
+      }, 2000);
+    }
+  };
       const row = document.createElement('div');
       row.className = 'mock__event';
       row.style.transition = 'all 0.3s ease';

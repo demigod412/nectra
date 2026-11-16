@@ -1085,3 +1085,52 @@ body.is-leaving .page, body.is-leaving main { opacity: 0; transform: translateY(
 .kyc-preview { margin-top: 8px; }
 .kyc-preview img { max-width: 220px; max-height: 150px; border-radius: var(--radius-md); border: 1px solid var(--border); display: block; }
 .kyc-doc-modal img { max-width: 100%; border-radius: var(--radius-md); }
+
+/* ---------- ECOSYSTEM STRIP ---------- */
+.eco-band { border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); background: var(--bg-elevated); padding: 22px 0; }
+.eco-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
+.eco-item { display: flex; align-items: center; gap: 12px; padding: 12px 14px; background: var(--bg-raised); border: 1px solid var(--border); border-radius: var(--radius-md); transition: transform .2s ease, border-color .2s ease; }
+.eco-item:hover { transform: translateY(-2px); border-color: rgba(242, 85, 154, .35); }
+.eco-item__ic { width: 38px; height: 38px; border-radius: 10px; display: grid; place-items: center; background: var(--pink-tint); color: var(--pink); flex-shrink: 0; }
+.eco-item__content { display: flex; flex-direction: column; gap: 2px; }
+.eco-item__title { font-size: 13.5px; font-weight: 600; color: var(--text); }
+.eco-item__sub { font-size: 11.5px; color: var(--text-muted); font-family: var(--font-mono); display: flex; align-items: center; gap: 5px; }
+
+/* ---------- AUTONOMOUS BOT FLEET ---------- */
+.bot-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 18px; margin-top: 24px; }
+.bot-card { background: linear-gradient(180deg, var(--bg-elevated), var(--bg-raised)); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 24px; display: flex; flex-direction: column; gap: 14px; position: relative; transition: all .25s var(--ease); overflow: hidden; }
+.bot-card::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, transparent, var(--pink), transparent); opacity: 0; transition: opacity .3s ease; }
+.bot-card:hover { transform: translateY(-3px); border-color: rgba(242, 85, 154, .45); box-shadow: 0 16px 40px -15px var(--pink-glow); }
+.bot-card:hover::before { opacity: 1; }
+.bot-card__head { display: flex; align-items: center; justify-content: space-between; }
+.bot-badge-icon { width: 44px; height: 44px; border-radius: 12px; background: var(--pink-tint); color: var(--pink); display: grid; place-items: center; position: relative; border: 1px solid rgba(242, 85, 154, .25); }
+.bot-status-dot { position: absolute; bottom: -2px; right: -2px; width: 10px; height: 10px; border-radius: 50%; background: var(--green); border: 2px solid var(--bg-elevated); box-shadow: 0 0 8px var(--green); }
+.bot-card h3 { font-size: 17.5px; margin: 0; font-weight: 600; }
+.bot-card p { font-size: 13.5px; color: var(--text-muted); line-height: 1.5; margin: 0; flex-grow: 1; }
+.bot-visualizer { background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 12px; font-family: var(--font-mono); font-size: 12px; }
+.bot-grid-sim { display: flex; flex-direction: column; gap: 5px; }
+.bot-grid-row { display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; border-radius: 6px; background: rgba(255,255,255,0.02); }
+.bot-grid-row.active { background: var(--green-tint); border: 1px solid rgba(34, 197, 94, .3); color: var(--green); font-weight: 600; }
+.bot-meter { height: 6px; border-radius: 3px; background: var(--border); overflow: hidden; margin: 8px 0 4px; position: relative; }
+.bot-meter-fill { height: 100%; width: 78%; background: linear-gradient(90deg, var(--green), var(--pink)); border-radius: 3px; }
+.bot-card__foot { display: flex; align-items: center; justify-content: space-between; font-size: 11.5px; color: var(--text-faint); border-top: 1px solid var(--border); padding-top: 12px; }
+
+/* ---------- PWA INSTALL PROMPT POPUP ---------- */
+.pwa-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.68); backdrop-filter: blur(8px); z-index: 99999; display: flex; align-items: flex-end; justify-content: center; opacity: 0; pointer-events: none; transition: opacity .3s var(--ease); }
+.pwa-overlay.is-active { opacity: 1; pointer-events: auto; }
+.pwa-sheet { background: var(--bg-elevated); border: 1px solid var(--border-strong); border-radius: 24px 24px 0 0; padding: 22px 20px calc(24px + env(safe-area-inset-bottom, 0px)); width: 100%; max-width: 500px; box-shadow: 0 -20px 60px rgba(0,0,0,.7), var(--shadow-glow); transform: translateY(100%); transition: transform .35s cubic-bezier(0.16, 1, 0.3, 1); display: flex; flex-direction: column; gap: 14px; }
+@media (min-width: 640px) {
+  .pwa-overlay { align-items: center; padding: 20px; }
+  .pwa-sheet { border-radius: 24px; transform: scale(.95); }
+  .pwa-overlay.is-active .pwa-sheet { transform: scale(1); }
+}
+.pwa-overlay.is-active .pwa-sheet { transform: translateY(0); }
+.pwa-head { display: flex; align-items: flex-start; justify-content: space-between; }
+.pwa-brand { display: flex; align-items: center; gap: 12px; }
+.pwa-icon-box { width: 44px; height: 44px; border-radius: 12px; background: var(--bg-raised); border: 1px solid var(--border); display: grid; place-items: center; box-shadow: 0 4px 16px var(--pink-glow); flex-shrink: 0; }
+.pwa-steps { display: flex; flex-direction: column; gap: 9px; background: var(--bg-raised); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; margin: 2px 0; }
+.pwa-step-row { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--text); }
+.pwa-step-num { width: 20px; height: 20px; border-radius: 50%; background: var(--pink-tint); color: var(--pink); font-size: 11px; font-weight: 700; display: grid; place-items: center; flex-shrink: 0; }
+.pwa-badge-btn { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; background: rgba(255,255,255,.08); border: 1px solid var(--border-strong); border-radius: 5px; vertical-align: middle; margin: 0 3px; color: #38bdf8; }
+.pwa-actions { display: flex; gap: 10px; margin-top: 4px; }
+.pwa-actions .btn { flex: 1; justify-content: center; }

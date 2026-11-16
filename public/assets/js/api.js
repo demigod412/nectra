@@ -257,9 +257,147 @@
     NAMES
   };
 
-  /* ---------------- PWA: service worker + web push ---------------- */
+  /* ---------------- PWA: service worker + web push + install prompt ---------------- */
+  let deferredPrompt = null;
+  if (typeof window !== 'undefined') {
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      if (NX.pwa) {
+        NX.pwa.deferredPrompt = e;
+        NX.pwa.maybePromptInstall();
+      }
+    });
+  }
+
   NX.pwa = {
     register() { if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('/sw.js').catch(() => {}); },
+    isStandalone() {
+      return (typeof navigator !== 'undefined' && 'standalone' in navigator && navigator.standalone) ||
+             (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+             (typeof document !== 'undefined' && document.referrer.includes('android-app://'));
+    },
+    isIos() {
+      const ua = (typeof navigator !== 'undefined' && navigator.userAgent) || '';
+      return /iPhone|iPad|iPod/i.test(ua);
+    },
+    isAndroid() {
+      const ua = (typeof navigator !== 'undefined' && navigator.userAgent) || '';
+      return /Android/i.test(ua);
+    },
+    isMobile() {
+      return NX.pwa.isAndroid() || NX.pwa.isIos();
+    },
+    isDismissed() {
+      try { return sessionStorage.getItem('nx_pwa_dismissed') === '1'; } catch (_) { return false; }
+    },
+    dismiss() {
+      try { sessionStorage.setItem('nx_pwa_dismissed', '1'); } catch (_) {}
+      const el = document.getElementById('pwa-install-overlay');
+      if (el) {
+        el.classList.remove('is-active');
+        setTimeout(() => el.remove(), 350);
+      }
+    },
+    async promptInstall() {
+      if (deferredPrompt) {
+        deferredPrompt.prompt();
+        const choice = await deferredPrompt.userChoice;
+        deferredPrompt = null;
+        NX.pwa.deferredPrompt = null;
+        NX.pwa.dismiss();
+        return choice && choice.outcome === 'accepted';
+      }
+      return false;
+    },
+    showInstallPrompt() {
+      if (NX.pwa.isStandalone() || NX.pwa.isDismissed()) return;
+      if (document.getElementById('pwa-install-overlay')) return;
+
+      const brandName = (window.NX && NX.brandName) ? NX.brandName() : 'NECTRA';
+      const isIos = NX.pwa.isIos();
+
+      const overlay = document.createElement('div');
+      overlay.className = 'pwa-overlay';
+      overlay.id = 'pwa-install-overlay';
+
+      if (isIos) {
+        overlay.innerHTML = `
+          <div class="pwa-sheet" role="dialog" aria-modal="true" aria-label="Install App">
+            <div class="pwa-head">
+              <div class="pwa-brand">
+                <div class="pwa-icon-box"><span data-logo="32"></span></div>
+                <div>
+                  <h3 style="margin:0;font-size:16px;font-weight:700">Install ${NX.esc(brandName)} on iPhone</h3>
+                  <span class="caption" style="color:var(--text-muted)">Apple iOS &middot; Native App Mode</span>
+                </div>
+              </div>
+              <button class="icon-btn icon-btn--sm" onclick="NX.pwa.dismiss()" aria-label="Close">&times;</button>
+            </div>
+            <p class="small muted" style="margin:0">Add to your Home Screen for full-screen trading, sub-second bot updates, and push notifications.</p>
+            <div class="pwa-steps">
+              <div class="pwa-step-row">
+                <span class="pwa-step-num">1</span>
+                <span>Tap <b class="strong">Share</b> <span class="pwa-badge-btn" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg></span> in Safari's bottom toolbar</span>
+              </div>
+              <div class="pwa-step-row">
+                <span class="pwa-step-num">2</span>
+                <span>Scroll down and select <b class="strong">Add to Home Screen</b> <span class="pwa-badge-btn" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg></span></span>
+              </div>
+              <div class="pwa-step-row">
+                <span class="pwa-step-num">3</span>
+                <span>Tap <b class="strong">Add</b> in the top right corner</span>
+              </div>
+            </div>
+            <div class="pwa-actions">
+              <button class="btn btn--primary" onclick="NX.pwa.dismiss()">Got it</button>
+            </div>
+          </div>
+        `;
+      } else {
+        overlay.innerHTML = `
+          <div class="pwa-sheet" role="dialog" aria-modal="true" aria-label="Install App">
+            <div class="pwa-head">
+              <div class="pwa-brand">
+                <div class="pwa-icon-box"><span data-logo="32"></span></div>
+                <div>
+                  <h3 style="margin:0;font-size:16px;font-weight:700">Install ${NX.esc(brandName)} App</h3>
+                  <span class="caption" style="color:var(--text-muted)">Android &middot; Native App Mode</span>
+                </div>
+              </div>
+              <button class="icon-btn icon-btn--sm" onclick="NX.pwa.dismiss()" aria-label="Close">&times;</button>
+            </div>
+            <p class="small muted" style="margin:0">Install on your device for lightning-fast DEX trading, full-screen bot execution, and real-time alerts.</p>
+            <div class="pwa-actions">
+              <button class="btn btn--ghost" onclick="NX.pwa.dismiss()">Maybe Later</button>
+              <button class="btn btn--primary" id="pwa-do-install-btn">Install App</button>
+            </div>
+          </div>
+        `;
+      }
+
+      document.body.appendChild(overlay);
+      if (window.NX && NX.hydrateLogos) NX.hydrateLogos(overlay);
+
+      const installBtn = overlay.querySelector('#pwa-do-install-btn');
+      if (installBtn) {
+        installBtn.addEventListener('click', async () => {
+          if (deferredPrompt) {
+            await NX.pwa.promptInstall();
+          } else {
+            NX.pwa.dismiss();
+            NX.toast('Use your browser menu (⋮) -> Add to Home Screen', { type: 'info' });
+          }
+        });
+      }
+
+      requestAnimationFrame(() => overlay.classList.add('is-active'));
+    },
+    maybePromptInstall() {
+      if (NX.pwa.isMobile() && !NX.pwa.isStandalone() && !NX.pwa.isDismissed()) {
+        setTimeout(() => NX.pwa.showInstallPrompt(), 1400);
+      }
+    },
     async pushSupported() { return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window; },
     async pushState() {
       if (!(await NX.pwa.pushSupported())) return 'unsupported';
@@ -268,7 +406,8 @@
       return (await reg.pushManager.getSubscription()) ? 'on' : 'off';
     },
     async enablePush() {
-      if (!(await NX.pwa.pushSupported())) throw new Error('This browser doesn’t support push notifications (on iPhone: add NECTRA to your Home Screen first)');
+      const bName = (window.NX && NX.brandName) ? NX.brandName() : 'NECTRA';
+      if (!(await NX.pwa.pushSupported())) throw new Error(`This browser doesn’t support push notifications (on iPhone: add ${bName} to your Home Screen first)`);
       const { key } = await NX.get('/api/push/key');
       if (!key) throw new Error('Push is not configured on the server');
       if ((await Notification.requestPermission()) !== 'granted') throw new Error('Notifications were blocked for this site');
