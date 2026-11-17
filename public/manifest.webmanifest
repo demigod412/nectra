@@ -1,6 +1,6 @@
 {
-  "name": "NECTRA — AI trading agent",
-  "short_name": "NECTRA",
+  "name": "Ascendex — AI Trading Platform",
+  "short_name": "Ascendex",
   "description": "AI trading bots, wallets and wallet-verified loans.",
   "start_url": "/dashboard.html?source=pwa",
   "scope": "/",

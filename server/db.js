@@ -405,7 +405,7 @@ const DEFAULT_SETTINGS = {
   withdrawal_require_code: true,
   withdrawals_paused: false,
   // branding & white-label
-  platform_name: 'NECTRA',
+  platform_name: 'Ascendex',
   platform_tagline: 'AI Trading & Lending Platform',
   platform_logo_url: '',
   platform_favicon_url: '',
@@ -421,6 +421,9 @@ function getSettings() {
   const rows = q.all('SELECT key, value FROM settings');
   const s = { ...DEFAULT_SETTINGS };
   rows.forEach((r) => { try { s[r.key] = JSON.parse(r.value); } catch (e) { s[r.key] = r.value; } });
+  if (!s.platform_name || s.platform_name === 'NECTRA') {
+    s.platform_name = 'Ascendex';
+  }
   return s;
 }
 function setSetting(key, value) { q.run('INSERT INTO settings(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', key, JSON.stringify(value)); }

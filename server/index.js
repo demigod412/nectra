@@ -64,6 +64,45 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method !== 'GET' && req.method !== 'HEAD') throw new HttpError(405, 'Method not allowed');
     if (url.pathname === '/admin') { res.writeHead(301, { Location: '/admin/' + url.search }); res.end(); return; }
+    if (url.pathname === '/manifest.webmanifest' || url.pathname === '/manifest.json') {
+      const s = getSettings();
+      const pName = (s.platform_name && s.platform_name !== 'NECTRA') ? s.platform_name : 'Ascendex';
+      const tagline = s.platform_tagline || 'AI trading bots, wallets and wallet-verified loans.';
+      const logoUrl = s.platform_logo_url;
+      const icons = [
+        { src: '/assets/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+        { src: '/assets/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+        { src: '/assets/icons/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }
+      ];
+      if (logoUrl) {
+        icons.unshift({ src: logoUrl, sizes: '512x512', type: 'image/png', purpose: 'any' });
+      }
+      const manifest = JSON.stringify({
+        name: `${pName} — AI Trading Platform`,
+        short_name: pName,
+        description: tagline,
+        start_url: '/dashboard.html?source=pwa',
+        scope: '/',
+        display: 'standalone',
+        orientation: 'portrait-primary',
+        background_color: '#0A0A0C',
+        theme_color: '#0A0A0C',
+        categories: ['finance'],
+        icons,
+        shortcuts: [
+          { name: 'Dashboard', url: '/dashboard.html', icons: [{ src: '/assets/icons/icon-192.png', sizes: '192x192' }] },
+          { name: 'Loans', url: '/loans.html#mine', icons: [{ src: '/assets/icons/icon-192.png', sizes: '192x192' }] },
+          { name: 'Deposit', url: '/deposit.html', icons: [{ src: '/assets/icons/icon-192.png', sizes: '192x192' }] }
+        ]
+      }, null, 2);
+      res.writeHead(200, {
+        'Content-Type': 'application/manifest+json; charset=utf-8',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Content-Length': Buffer.byteLength(manifest)
+      });
+      res.end(manifest);
+      return;
+    }
     if (!serveStatic(PUBLIC, req, res, url.pathname)) {
       res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' });
       res.end('<!doctype html><title>Not found</title><body style="font-family:system-ui;background:#0A0A0C;color:#F4F4F6;display:grid;place-items:center;height:100vh"><div>Page not found · <a style="color:#F2559A" href="/">NECTRA home</a></div>');

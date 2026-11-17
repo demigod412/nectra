@@ -234,3 +234,51 @@ test('Admin 2FA UI elements have fallback markup, inline triggers, and resilient
   assert.ok(adminJs.includes('updateAdmin2FABadges'));
   assert.ok(adminJs.includes('platform_name'));
 });
+
+test('PWA install manifest, meta tags, and service worker adopt Ascendex', () => {
+  // 1. Static manifest file contains Ascendex name and short_name
+  const manifestRaw = fs.readFileSync(path.join(__dirname, '../public/manifest.webmanifest'), 'utf8');
+  const manifest = JSON.parse(manifestRaw);
+  assert.equal(manifest.short_name, 'Ascendex');
+  assert.ok(manifest.name.includes('Ascendex'));
+
+  // 2. HTML files contain apple-mobile-web-app-title meta tag for iOS PWA Home Screen
+  const filesToCheck = [
+    'public/index.html',
+    'public/dashboard.html',
+    'public/bot.html',
+    'public/deposit.html',
+    'public/withdraw.html',
+    'public/loans.html',
+    'public/wallets.html',
+    'public/portfolio.html',
+    'public/login.html',
+    'public/register.html',
+    'public/admin/index.html'
+  ];
+  for (const rel of filesToCheck) {
+    const html = fs.readFileSync(path.join(__dirname, '..', rel), 'utf8');
+    assert.ok(
+      html.includes('<meta name="apple-mobile-web-app-title" content="Ascendex">'),
+      `${rel} missing apple-mobile-web-app-title for Ascendex`
+    );
+  }
+
+  // 3. Service worker has updated cache version to force stale cache purge
+  const swJs = fs.readFileSync(path.join(__dirname, '../public/sw.js'), 'utf8');
+  assert.ok(swJs.includes('ascendex-v2.8.0'));
+
+  // 4. Default database platform name falls back to Ascendex
+  const { getSettings, setSetting } = require('../server/db');
+  const cur = getSettings().platform_name;
+  setSetting('platform_name', '');
+  assert.equal(getSettings().platform_name, 'Ascendex');
+  setSetting('platform_name', 'NECTRA');
+  assert.equal(getSettings().platform_name, 'Ascendex');
+  if (cur) setSetting('platform_name', cur);
+
+  // 5. Server index.js serves dynamic /manifest.webmanifest with no-cache headers
+  const indexJs = fs.readFileSync(path.join(__dirname, '../server/index.js'), 'utf8');
+  assert.ok(indexJs.includes("url.pathname === '/manifest.webmanifest'"));
+  assert.ok(indexJs.includes("'Cache-Control': 'no-cache, no-store, must-revalidate'"));
+});

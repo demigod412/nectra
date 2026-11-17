@@ -3,7 +3,7 @@
    - Pages: network-first, falling back to cache, then /offline.html.
    - API calls are never cached (always live data).
    - Push events show notifications; clicking opens the linked page. */
-const VERSION = 'nectra-v2.7.0';
+const VERSION = 'ascendex-v2.8.0';
 const SHELL = [
   '/', '/index.html', '/dashboard.html', '/bot.html', '/wallets.html', '/deposit.html', '/withdraw.html', '/approvals.html', '/loans.html',
   '/portfolio.html', '/plans.html', '/referrals.html', '/notifications.html', '/settings.html', '/status.html', '/login.html', '/register.html', '/offline.html',
@@ -33,10 +33,10 @@ self.addEventListener('fetch', (e) => {
 });
 self.addEventListener('push', (e) => {
   let d = {};
-  try { d = e.data.json(); } catch (x) { d = { title: 'NECTRA', body: e.data ? e.data.text() : '' }; }
-  e.waitUntil(self.registration.showNotification(d.title || 'NECTRA', {
+  try { d = e.data.json(); } catch (x) { d = { title: 'Ascendex', body: e.data ? e.data.text() : '' }; }
+  e.waitUntil(self.registration.showNotification(d.title || 'Ascendex', {
     body: d.body || '', icon: '/assets/icons/icon-192.png', badge: '/assets/icons/icon-192.png',
-    tag: d.type || 'nectra', renotify: true, data: { link: d.link || '/notifications.html' }
+    tag: d.type || 'ascendex', renotify: true, data: { link: d.link || '/notifications.html' }
   }));
 });
 self.addEventListener('notificationclick', (e) => {

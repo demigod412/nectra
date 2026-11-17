@@ -100,8 +100,8 @@
   NX.hydrateIcons = (root = document) => $$('i[data-i]', root).forEach((i) => { i.outerHTML = NX.icon(i.dataset.i, i.className); });
 
   /* ---------- BRANDING & WHITE-LABEL ---------- */
-  NX.brand = NX.store.get('brand', { name: 'NECTRA', logo: '', favicon: 'assets/favicon.svg' });
-  NX.brandName = () => (NX.brand && NX.brand.name) || 'NECTRA';
+  NX.brand = NX.store.get('brand', { name: 'Ascendex', logo: '', favicon: 'assets/favicon.svg' });
+  NX.brandName = () => (NX.brand && NX.brand.name && NX.brand.name !== 'NECTRA') ? NX.brand.name : 'Ascendex';
 
   function walkAndReplace(node, brandName, prevName) {
     if (!node || !brandName) return;
@@ -224,7 +224,16 @@
       fav.href = b.favicon;
     }
 
-    // 4. Update brand elements directly
+    // 4. Update apple-mobile-web-app-title for iOS PWA Home Screen
+    let appTitle = document.querySelector('meta[name="apple-mobile-web-app-title"]');
+    if (!appTitle) {
+      appTitle = document.createElement('meta');
+      appTitle.name = 'apple-mobile-web-app-title';
+      document.head.appendChild(appTitle);
+    }
+    appTitle.content = name;
+
+    // 5. Update brand elements directly
     document.querySelectorAll('.brand__name, [data-brand]').forEach((el) => { el.textContent = name; });
     document.querySelectorAll('a.brand').forEach((el) => { el.setAttribute('aria-label', `${name} home`); });
 

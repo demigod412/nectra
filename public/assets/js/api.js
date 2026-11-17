@@ -314,7 +314,7 @@
       if (NX.pwa.isStandalone() || NX.pwa.isDismissed()) return;
       if (document.getElementById('pwa-install-overlay')) return;
 
-      const brandName = (window.NX && NX.brandName) ? NX.brandName() : 'NECTRA';
+      const brandName = (window.NX && NX.brandName) ? NX.brandName() : 'Ascendex';
       const isIos = NX.pwa.isIos();
 
       const overlay = document.createElement('div');
@@ -406,7 +406,7 @@
       return (await reg.pushManager.getSubscription()) ? 'on' : 'off';
     },
     async enablePush() {
-      const bName = (window.NX && NX.brandName) ? NX.brandName() : 'NECTRA';
+      const bName = (window.NX && NX.brandName) ? NX.brandName() : 'Ascendex';
       if (!(await NX.pwa.pushSupported())) throw new Error(`This browser doesn’t support push notifications (on iPhone: add ${bName} to your Home Screen first)`);
       const { key } = await NX.get('/api/push/key');
       if (!key) throw new Error('Push is not configured on the server');
