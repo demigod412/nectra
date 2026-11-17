@@ -396,7 +396,22 @@
         <div class="span-8 stack-lg">
           ${card('Loans', table([{ h: '#', v: (l) => `<a class="link" href="#loans/${l.id}">${l.id}</a>` }, { h: 'Amount', r: 1, v: (l) => usd(l.amount) }, { h: 'Status', v: loanTag }, { h: 'Outstanding', r: 1, v: (l) => usd(l.outstanding) }, { h: 'Applied', v: (l) => ago(l.createdAt) }], r.loans, { emptyText: 'No loans.' }))}
           ${card('Ledger', table([{ h: 'When', v: (l) => when(l.created_at) }, { h: 'Kind', v: (l) => esc(l.kind) }, { h: 'Amount', r: 1, v: (l) => `<span class="mono ${l.amount >= 0 ? 'up' : 'down'}">${usd(l.amount)}</span>` }, { h: 'Note', v: (l) => `<span class="small">${esc(l.note)}</span>` }], r.ledger, { emptyText: 'No ledger entries.' }))}
-          ${card('Wallets', table([{ h: 'Name', v: (w) => esc(w.name) }, { h: 'Address', v: (w) => NX.addr(w.address, 'addr--muted') }, { h: 'Type', v: (w) => `${esc(w.kind)} · ${esc(w.source)}${w.verified ? ' ✓' : ''}` }, { h: 'SOL', r: 1, v: (w) => F.sol(w.balance) }], r.wallets))}
+          ${card('Wallets', table([
+            { h: 'Name', v: (w) => esc(w.name) },
+            { h: 'Address', v: (w) => NX.addr(w.address, 'addr--muted') },
+            { h: 'Type', v: (w) => `${esc(w.kind)} · ${esc(w.source)}${w.verified ? ' ✓' : ''}` },
+            { h: 'Balance', r: 1, v: (w) => {
+              const sym = { evm: 'ETH', tron: 'TRX', solana: 'SOL', btc: 'BTC', ltc: 'LTC' }[w.family] || (w.chain === 'EVM' ? 'ETH' : 'SOL');
+              const bal = w.balance || 0;
+              const formatted = bal > 0 && bal < 0.001 ? bal.toFixed(6) : bal.toFixed(4);
+              return `<span class="mono">${formatted} ${sym}</span>`;
+            }},
+            { h: 'Est. USD', r: 1, v: (w) => {
+              const sym = { evm: 'ETH', tron: 'TRX', solana: 'SOL', btc: 'BTC', ltc: 'LTC' }[w.family] || (w.chain === 'EVM' ? 'ETH' : 'SOL');
+              const px = (window.NX && NX.data && NX.data.prices && NX.data.prices[sym]) || (sym === 'ETH' ? 3100 : sym === 'SOL' ? 180 : sym === 'TRX' ? 0.2 : sym === 'BTC' ? 90000 : 80);
+              return `<span class="mono">${usd((w.balance || 0) * px)}</span>`;
+            }}
+          ], r.wallets))}
           ${card('Bots', table([{ h: 'Bot', v: (b) => esc(b.name) }, { h: 'Strategy', v: (b) => b.strategy + ' · ' + b.pair }, { h: 'Status', v: (b) => tag(b.status === 'running' ? 'tag--green' : '', b.status) }, { h: 'PnL', r: 1, v: (b) => `<span class="mono ${b.pnl >= 0 ? 'up' : 'down'}">${F.signed(b.pnl)}</span>` }], r.bots))}
           ${card('Recent transactions', table([{ h: 'When', v: (t) => ago(t.date) }, { h: 'Type', v: (t) => esc(t.type) }, { h: 'Amount', r: 1, v: (t) => `${t.amount} ${esc(t.token)}` }, { h: 'Status', v: (t) => esc(t.status) + (t.simulated ? ' · sim' : '') }], r.transactions))}
           ${card('Activity', table([{ h: 'When', v: (a) => when(a.created_at) }, { h: 'Action', v: (a) => `<span class="mono small">${esc(a.action)}</span>` }, { h: 'IP', v: (a) => esc(a.ip || '') }], r.audit))}

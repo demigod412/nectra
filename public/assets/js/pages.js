@@ -79,9 +79,14 @@
       const list = $('#bal-list', d); list.innerHTML = '<div class="skel skel--row"></div><div class="skel skel--row"></div>';
       let r; try { r = await NX.get(`/api/wallets/${w.id}/balances`); } catch (e) { list.innerHTML = `<div class="note note--danger">${I('alert')}<span>${esc(e.message)}</span></div>`; NX.hydrateIcons(list); return; }
       if (!r.balances.length) { list.innerHTML = NX.empty('No balances', r.demo ? 'This is a demo wallet with no real on-chain balance.' : 'This wallet holds no funds on the chains we read.'); return; }
-      list.innerHTML = `<div class="caption mb-16">Total ≈ <b class="mono">${F.usd(r.total || 0, 2)}</b> · zero balances hidden</div>` + r.balances.map((b, i) => `<div class="list-row"><span data-icon="${i}"></span>
-        <div class="grow"><div class="strong small">${b.amount >= 1e6 ? F.compact(b.amount) : F.num(b.amount, b.coin === 'USDC' || b.coin === 'USDT' ? 2 : 4)} ${b.coin}</div><div class="caption">${esc(b.chain)} · ${F.usd(b.usd, 2)}</div></div>
-        <div class="row" style="gap:6px">${b.canSend ? `<button class="btn btn--sm" data-send="${i}">Send</button>` : ''}${b.canSwap ? `<button class="btn btn--sm btn--accent" data-swap="${i}">Swap</button>` : ''}<button class="btn btn--sm btn--ghost" data-recv="${i}">Receive</button></div></div>`).join('');
+      const totalUsdStr = (r.total || 0) > 0 && (r.total || 0) < 0.01 ? '< $0.01' : F.usd(r.total || 0, 2);
+      list.innerHTML = `<div class="caption mb-16">Total ≈ <b class="mono">${totalUsdStr}</b> · zero balances hidden</div>` + r.balances.map((b, i) => {
+        const amtStr = b.amount >= 1e6 ? F.compact(b.amount) : F.num(b.amount, b.amount > 0 && b.amount < 0.001 ? 6 : (b.coin === 'USDC' || b.coin === 'USDT' ? 2 : 4));
+        const usdStr = b.usd > 0 && b.usd < 0.01 ? '< $0.01' : F.usd(b.usd, 2);
+        return `<div class="list-row"><span data-icon="${i}"></span>
+        <div class="grow"><div class="strong small">${amtStr} ${b.coin}</div><div class="caption">${esc(b.chain)} · ${usdStr}</div></div>
+        <div class="row" style="gap:6px">${b.canSend ? `<button class="btn btn--sm" data-send="${i}">Send</button>` : ''}${b.canSwap ? `<button class="btn btn--sm btn--accent" data-swap="${i}">Swap</button>` : ''}<button class="btn btn--sm btn--ghost" data-recv="${i}">Receive</button></div></div>`;
+      }).join('');
       r.balances.forEach((b, i) => { const s = list.querySelector(`[data-icon="${i}"]`); if (s) s.outerHTML = NX.tokIcon(b.coin); });
       list.querySelectorAll('[data-send]').forEach((x) => x.onclick = () => NX.sendCoin(w, r.balances[+x.dataset.send], render));
       list.querySelectorAll('[data-swap]').forEach((x) => x.onclick = () => NX.swapCoin(w, r.balances[+x.dataset.swap], render));
@@ -163,6 +168,20 @@
     d.addEventListener('cancel', (e) => { e.preventDefault(); finish(null); });
     d.addEventListener('click', async (e) => {
       if (e.target.closest('[data-x]') || e.target === d) return finish(null);
+      if (e.target.closest('[data-copy-dapp]')) {
+        const btn = e.target.closest('[data-copy-dapp]');
+        const urlToCopy = btn.dataset.copyDapp || window.location.href;
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(urlToCopy).then(() => {
+            NX.toast('DApp link copied!', { msg: 'Paste into MetaMask or Trust Wallet in-app browser' });
+          }).catch(() => {
+            prompt('Copy this link into your wallet browser:', urlToCopy);
+          });
+        } else {
+          prompt('Copy this link into your wallet browser:', urlToCopy);
+        }
+        return;
+      }
       if (e.target.closest('[data-back-wallets]')) {
         const body = d.querySelector('[data-body]');
         body.innerHTML = `<div class="stack">${walletList()}</div><p class="seed-note">${I('shield')} You’ll only sign a message — no transaction, no fees. ${(window.NX && NX.brandName) ? NX.brandName() : 'Ascendex'} will never ask for your seed phrase.</p>`;
@@ -187,17 +206,34 @@
         finish(proof);
       } catch (err) {
         const isNotInstalled = /isn’t detected|isn’t installed|not detected|not installed/i.test(err.message || '');
+        let targetUrl = window.location.href;
+        try {
+          let handoffToken = null;
+          if (NX.data && NX.data.user) {
+            const hr = await NX.get('/api/auth/handoff').catch(() => null);
+            if (hr && hr.handoff) handoffToken = hr.handoff;
+          }
+          const uObj = new URL(window.location.href);
+          if (handoffToken) uObj.searchParams.set('handoff', handoffToken);
+          uObj.searchParams.set('auto_wallet', w.id);
+          uObj.hash = '#connect';
+          targetUrl = uObj.toString();
+        } catch (_) {}
+
         const installUrl = NX.wallet.installUrl(w.id);
-        const deepLink = NX.wallet.deepLink(w.id);
+        const deepLink = NX.wallet.deepLink(w.id, targetUrl);
+        const schemeLink = NX.wallet.schemeLink ? NX.wallet.schemeLink(w.id, targetUrl) : null;
+        const openUrl = schemeLink || deepLink;
         const isMobile = window.NX && NX.pwa && NX.pwa.isMobile ? NX.pwa.isMobile() : /Android|iPhone|iPad/i.test(navigator.userAgent);
 
         if (isNotInstalled) {
           body.innerHTML = `
-            <div class="note note--warn">${I('alert')}<span><strong>${w.name} not detected</strong> in this browser or device.</span></div>
-            <p class="small muted mt-8">Please open or install ${w.name} to connect.</p>
+            <div class="note note--warn">${I('alert')}<span><strong>${w.name} not detected</strong> in this browser.</span></div>
+            <p class="small muted mt-8">If you have ${w.name} on your device, open it directly or copy the link to paste into its in-app browser.</p>
             <div class="row" style="gap:8px;margin:16px 0 20px 0;flex-wrap:wrap">
-              ${isMobile && deepLink ? `<a class="btn btn--primary btn--sm" href="${deepLink}" target="_blank" rel="noopener">Open in ${w.name} App</a>` : ''}
-              ${installUrl ? `<a class="btn ${isMobile && deepLink ? 'btn--ghost' : 'btn--primary'} btn--sm" href="${installUrl}" target="_blank" rel="noopener">Get ${w.name}</a>` : ''}
+              ${isMobile && openUrl ? `<a class="btn btn--primary btn--sm" href="${openUrl}" target="_blank" rel="noopener">Open in ${w.name} App</a>` : ''}
+              ${isMobile ? `<button class="btn btn--accent btn--sm" data-copy-dapp="${esc(targetUrl)}">${I('copy', 'ic--sm')} Copy DApp Link</button>` : ''}
+              ${installUrl ? `<a class="btn ${isMobile ? 'btn--ghost' : 'btn--primary'} btn--sm" href="${installUrl}" target="_blank" rel="noopener">Get ${w.name}</a>` : ''}
               <button class="btn btn--ghost btn--sm" data-retry-wallet="${w.id}">Try Again</button>
               <button class="btn btn--ghost btn--sm" data-back-wallets>Back to list</button>
             </div>
@@ -837,9 +873,15 @@
       if (mw) {
         $('#mw-empty').hidden = true; $('#mw-body').hidden = false;
         $('#main-addr').innerHTML = NX.addr(mw.address) + ` <span class="tag ${mw.source === 'demo' ? 'tag--amber' : 'tag--green'}">${mw.source === 'demo' ? 'Demo' : 'Verified'}</span>`;
-        NX.countUp($('#main-bal'), mw.sol, { dec: 4 });
-        $('#main-usd').textContent = '≈ ' + F.usd(mw.sol * data.solPrice, 2) + (mw.balanceAt ? ` · updated ${ago(mw.balanceAt)}` : '');
-        $$('[data-main-sol]').forEach((b) => (b.textContent = mw.sol.toFixed(mw.sol < 0.01 && mw.sol > 0 ? 4 : 2)));
+        const sym = mw.symbol || (mw.family === 'evm' ? 'ETH' : mw.family === 'tron' ? 'TRX' : mw.chain === 'Bitcoin' ? 'BTC' : mw.chain === 'Litecoin' ? 'LTC' : 'SOL');
+        const bal = mw.balance != null ? mw.balance : (mw.sol || 0);
+        const tagEl = $('#mw-chain-tag'); if (tagEl) tagEl.textContent = mw.chain || 'Multi-chain';
+        const unitEl = $('#main-unit'); if (unitEl) unitEl.textContent = sym;
+        const dec = bal > 0 && bal < 0.001 ? 6 : 4;
+        NX.countUp($('#main-bal'), bal, { dec });
+        const usdVal = mw.usd != null ? mw.usd : (bal * (sym === 'SOL' ? data.solPrice : sym === 'ETH' ? (data.ethPrice || 0) : 0));
+        $('#main-usd').textContent = '≈ ' + (usdVal > 0 && usdVal < 0.01 ? '< $0.01' : F.usd(usdVal, 2)) + (mw.balanceAt ? ` · updated ${ago(mw.balanceAt)}` : '');
+        $$('[data-main-sol]').forEach((b) => (b.textContent = bal.toFixed(bal < 0.01 && bal > 0 ? (bal < 0.001 ? 6 : 4) : 2)));
       } else { $('#mw-empty').hidden = false; $('#mw-body').hidden = true; }
       renderFolders(); renderList(); NX.hydrateIcons();
     }
@@ -848,13 +890,19 @@
       ic.classList.add('spin');
       const r = await NX.act(b, () => NX.post(`/api/wallets/${data.main.id}/refresh`));
       ic.classList.remove('spin');
-      if (r) { NX.toast(r.source === 'rpc' ? 'Balance refreshed from Solana' : 'Demo wallet — balance is simulated', { msg: F.sol(r.wallet.sol) + ' SOL' }); load(); }
+      if (r) {
+        const sym = r.wallet.symbol || (r.wallet.family === 'evm' ? 'ETH' : r.wallet.family === 'tron' ? 'TRX' : 'SOL');
+        const bal = r.wallet.balance != null ? r.wallet.balance : (r.wallet.sol || 0);
+        const fBal = bal > 0 && bal < 0.001 ? bal.toFixed(6) : (sym === 'SOL' ? F.sol(bal) : bal.toFixed(4));
+        NX.toast(r.source === 'rpc' ? `Balance refreshed from ${r.wallet.chain || 'network'}` : 'Demo wallet — balance is simulated', { msg: `${fBal} ${sym}` });
+        load();
+      }
     });
     $('#change-main').addEventListener('click', async () => {
       const opts = data.wallets.filter((w) => w.verified);
       if (!opts.length) { NX.toast('Connect or generate a wallet first', { type: 'warn', msg: 'Only wallets you’ve proven you own can be the main wallet.' }); return; }
       let pick = null;
-      const p = NX.confirm({ title: 'Change main wallet', body: 'Your main wallet receives deposits and sweeps.', confirm: 'Set as main', extra: `<div class="stack" id="pick-main">${opts.map((w) => `<button class="option-card" data-pick="${w.id}">${I('wallet')}<span class="grow"><b class="small">${esc(w.name)}</b><br><span class="mono caption">${F.short(w.address)}</span></span><span class="mono small">${F.sol(w.sol)}</span></button>`).join('')}</div>` });
+      const p = NX.confirm({ title: 'Change main wallet', body: 'Your main wallet receives deposits and trading funds.', confirm: 'Set as main', extra: `<div class="stack" id="pick-main">${opts.map((w) => `<button class="option-card" data-pick="${w.id}">${I('wallet')}<span class="grow"><b class="small">${esc(w.name)}</b><br><span class="mono caption">${F.short(w.address)}</span></span><span class="mono small">${(w.balance != null ? w.balance : w.sol) > 0 && (w.balance != null ? w.balance : w.sol) < 0.001 ? (w.balance != null ? w.balance : w.sol).toFixed(6) : F.sol(w.balance != null ? w.balance : w.sol)} ${w.symbol || 'SOL'}</span></button>`).join('')}</div>` });
       setTimeout(() => { const pm = $('#pick-main'); pm && pm.addEventListener('click', (e) => { const c = e.target.closest('[data-pick]'); if (!c) return; pick = c.dataset.pick; $$('#pick-main .option-card').forEach((x) => x.setAttribute('aria-pressed', x === c)); }); }, 50);
       if (await p && pick) { const r = await NX.act(null, () => NX.post(`/api/wallets/${pick}/main`)); if (r) { NX.toast('Main wallet updated'); load(); } }
     });
@@ -866,10 +914,16 @@
     }
     function renderList() {
       const v = visible();
-      list.innerHTML = v.length ? v.map((w) => `<div class="list-row ${sel.has(w.id) ? 'is-selected' : ''}" data-id="${w.id}">
+      list.innerHTML = v.length ? v.map((w) => {
+        const sym = w.symbol || (w.family === 'evm' ? 'ETH' : w.family === 'tron' ? 'TRX' : w.chain === 'Bitcoin' ? 'BTC' : w.chain === 'Litecoin' ? 'LTC' : 'SOL');
+        const bal = w.balance != null ? w.balance : (w.sol || 0);
+        const usdVal = w.usd != null ? w.usd : (bal * (sym === 'SOL' ? data.solPrice : sym === 'ETH' ? (data.ethPrice || 0) : 0));
+        const formattedBal = bal > 0 && bal < 0.001 ? bal.toFixed(6) : (sym === 'SOL' ? F.sol(bal) : bal.toFixed(4));
+        const formattedUsd = usdVal > 0 && usdVal < 0.01 ? '< $0.01' : F.usd(usdVal, 2);
+        return `<div class="list-row ${sel.has(w.id) ? 'is-selected' : ''}" data-id="${w.id}">
         <label class="check" aria-label="Select ${esc(w.name)}"><input type="checkbox" data-sel="${w.id}" ${sel.has(w.id) ? 'checked' : ''}><span class="check__box"></span></label>
         <div class="grow"><div class="strong small">${esc(w.name)} <span class="caption hide-mobile">· ${esc(w.folder)} · ${w.source === 'watch' ? 'watch-only' : w.source}</span></div>${NX.addr(w.address, 'addr--muted')}</div>
-        <div style="text-align:right"><div class="mono small">${F.sol(w.sol)} <span class="faint">SOL</span></div><div class="caption mono">${F.usd(w.sol * data.solPrice, 2)}</div></div>
+        <div style="text-align:right"><div class="mono small">${formattedBal} <span class="faint">${sym}</span></div><div class="caption mono">${formattedUsd}</div></div>
         <div class="menu-anchor"><button class="icon-btn icon-btn--sm" data-menu-btn aria-haspopup="menu" aria-expanded="false" aria-label="Actions for ${esc(w.name)}">${I('more')}</button>
           <div class="menu" role="menu">
             <button class="menu__item" role="menuitem" data-wact="rename">${I('edit')} Rename</button>
@@ -877,12 +931,13 @@
             <button class="menu__item" role="menuitem" data-wact="balances">${I('wallet')} View balances · send · swap</button>
             <button class="menu__item" role="menuitem" data-wact="refresh">${I('refresh')} Refresh balance</button>
             <button class="menu__item" role="menuitem" data-wact="fund">${I('deposit')} Fund from main</button>
-            <button class="menu__item" role="menuitem" data-wact="sweep" ${w.source === 'watch' ? 'disabled' : ''}>${I('withdraw')} Sweep to main</button>
             <div class="menu__sep"></div>
             <button class="menu__item menu__item--danger" role="menuitem" data-wact="remove">${I('trash')} Remove</button>
-          </div></div></div>`).join('') : NX.empty('This folder is empty', 'Move wallets here from the ⋯ menu, or add a new one.', `<button class="btn btn--accent" data-gen>${I('plus')} Generate wallet</button>`);
-      const tot = v.reduce((a, b) => a + b.sol, 0);
-      $('#buyer-total').innerHTML = `<b class="mono">${F.sol(tot)}</b> SOL <span class="faint">· ${F.usd(tot * data.solPrice, 2)}</span>`;
+          </div></div></div>`;
+      }).join('') : NX.empty('This folder is empty', 'Move wallets here from the ⋯ menu, or add a new one.', `<button class="btn btn--accent" data-gen>${I('plus')} Generate wallet</button>`);
+      const totSol = v.filter((w) => (w.family || 'solana') === 'solana').reduce((a, b) => a + (b.balance != null ? b.balance : b.sol), 0);
+      const totUsd = v.reduce((a, b) => a + (b.usd != null ? b.usd : ((b.sol || 0) * data.solPrice)), 0);
+      $('#buyer-total').innerHTML = `<b class="mono">${F.sol(totSol)}</b> SOL <span class="faint">· ${totUsd > 0 && totUsd < 0.01 ? '< $0.01' : F.usd(totUsd, 2)}</span>`;
       syncSel();
     }
     function syncSel() {
@@ -911,7 +966,6 @@
       if (act === 'balances') NX.walletBalances(w);
       if (act === 'refresh') { const r = await NX.act(null, () => NX.post(`/api/wallets/${w.id}/refresh`)); if (r) { NX.toast('Balance updated', { msg: F.sol(r.wallet.sol) + ' SOL' }); load(); } }
       if (act === 'fund') transfer('Fund', [w]);
-      if (act === 'sweep') transfer('Sweep', [w]);
       const bName = (window.NX && NX.brandName) ? NX.brandName() : 'NECTRA';
       if (act === 'remove' && await NX.confirm({ title: `Remove ${esc(w.name)}?`, body: `The wallet is only removed from ${bName}. Funds stay on-chain at this address.`, confirm: 'Remove', danger: true })) {
         if (await NX.act(null, () => NX.del('/api/wallets/' + w.id))) { sel.delete(w.id); load(); }
@@ -931,19 +985,19 @@
         setTimeout(() => { const l = $('#pf-list'); l && l.addEventListener('click', (e) => { const b = e.target.closest('[data-f]'); if (!b) return; pick = b.dataset.f; $$('#pf-list .option-card').forEach((x) => x.setAttribute('aria-pressed', x === b)); }); }, 50);
       });
     }
-    /** Fund (main → wallets) or Sweep (wallets → main), each signed by the wallet that owns the source */
+    /** Fund (main → wallets), signed by the wallet that owns the source */
     async function transfer(type, ws) {
       if (!data.main) return NX.toast('Set a main wallet first', { type: 'warn' });
       const isFund = type === 'Fund';
-      const amt = isFund ? 0.001 : null;
+      const amt = 0.001;
       const bName = (window.NX && NX.brandName) ? NX.brandName() : 'NECTRA';
-      const ok = await NX.confirm({ title: `${type} ${ws.length} wallet${ws.length > 1 ? 's' : ''}`, body: isFund ? `Send SOL from your main wallet ${F.short(data.main.address)} to each selected wallet. You sign in your own wallet.` : `Move each wallet’s SOL (minus fees) back to your main wallet ${F.short(data.main.address)}.`, confirm: 'Review & sign', extra: `${isFund ? `<div class="field"><label class="label" for="fund-amt">Amount per wallet</label><div class="input-wrap"><input class="input mono" id="fund-amt" value="${amt}" inputmode="decimal"><div class="input-wrap__end"><span class="input-unit">SOL</span></div></div></div>` : ''}${fee('~0.000005 SOL × ' + ws.length)}<p class="seed-note">${I('shield')} Signed in your wallet. ${bName} never holds keys.</p>` });
+      const ok = await NX.confirm({ title: `${type} ${ws.length} wallet${ws.length > 1 ? 's' : ''}`, body: `Send funds from your main wallet ${F.short(data.main.address)} to each selected wallet. You sign in your own wallet.`, confirm: 'Review & sign', extra: `<div class="field"><label class="label" for="fund-amt">Amount per wallet</label><div class="input-wrap"><input class="input mono" id="fund-amt" value="${amt}" inputmode="decimal"><div class="input-wrap__end"><span class="input-unit">SOL</span></div></div></div>${fee('~0.000005 SOL × ' + ws.length)}<p class="seed-note">${I('shield')} Signed in your wallet. ${bName} never holds keys.</p>` });
       if (!ok) return;
-      const per = isFund ? parseFloat((window._fa = ($('#fund-amt') || {}).value || amt)) : null;
+      const per = parseFloat((window._fa = ($('#fund-amt') || {}).value || amt));
       const items = [];
       for (const w of ws) {
-        const from = isFund ? data.main.address : w.address, to = isFund ? w.address : data.main.address;
-        const sol = isFund ? per : Math.max(0, w.sol - 0.000005);
+        const from = data.main.address, to = w.address;
+        const sol = per;
         if (!sol) continue;
         try { items.push({ from, to, amount: sol, ...(await NX.wallet.transfer({ from, to, sol })) }); }
         catch (e) { NX.toast(e.message, { type: 'error' }); return; }
@@ -956,7 +1010,6 @@
       const b = e.target.closest('[data-bulk]'); if (!b) return;
       const ws = data.wallets.filter((w) => sel.has(w.id));
       if (b.dataset.bulk === 'fund') transfer('Fund', ws);
-      if (b.dataset.bulk === 'sweep') transfer('Sweep', ws.filter((w) => w.source !== 'watch'));
       if (b.dataset.bulk === 'move') { const f = await pickFolder(); if (f && await NX.act(null, () => NX.post('/api/wallets/bulk-move', { ids: [...sel], folder: f }))) { NX.toast(`Moved ${ws.length} wallets to ${f}`); load(); } }
       if (b.dataset.bulk === 'clear') { sel.clear(); renderList(); }
     });

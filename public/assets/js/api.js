@@ -214,6 +214,12 @@
     coinbase: (u) => `https://go.cb-w.com/dapp?cb_url=${encodeURIComponent(u)}`,
     solflare: (u) => `https://solflare.com/ul/v1/browse/${encodeURIComponent(u)}?ref=${encodeURIComponent(location.origin)}`
   };
+  const SCHEME_LINKS = {
+    metamask: (u) => `metamask://dapp/${u.replace(/^https?:\/\//, '')}`,
+    trust: (u) => `trust://open_url?coin_id=60&url=${encodeURIComponent(u)}`,
+    phantom: (u) => `phantom://browse/${encodeURIComponent(u)}`,
+    solflare: (u) => `solflare://browse/${encodeURIComponent(u)}`
+  };
   const NAMES = { phantom: 'Phantom', solflare: 'Solflare', backpack: 'Backpack', metamask: 'MetaMask', coinbase: 'Coinbase Wallet', trust: 'Trust Wallet', binance: 'Binance Wallet', evm: 'Browser wallet', tronlink: 'TronLink', demo: 'Demo wallet' };
   const toHex = (s) => '0x' + Array.from(new TextEncoder().encode(s)).map((b) => b.toString(16).padStart(2, '0')).join('');
   const b64ToBytes = (b64) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
@@ -223,9 +229,15 @@
     familyOf: (id) => (id === 'demo' ? 'solana' : (PROVIDERS[id] || {}).family),
     available: (id) => id === 'demo' ? !!(NX.data.settings && NX.data.settings.demo_mode) || !document.body.classList.contains('app') : !!(PROVIDERS[id] && PROVIDERS[id].get()),
     installUrl: (id) => INSTALL[id],
-    deepLink: (id) => {
+    deepLink: (id, targetUrl) => {
       const fn = DEEP_LINKS[id];
-      return (fn && typeof window !== 'undefined') ? fn(window.location.href) : null;
+      const base = targetUrl || (typeof window !== 'undefined' ? window.location.href : '');
+      return (fn && base) ? fn(base) : null;
+    },
+    schemeLink: (id, targetUrl) => {
+      const fn = SCHEME_LINKS[id];
+      const base = targetUrl || (typeof window !== 'undefined' ? window.location.href : '');
+      return (fn && base) ? fn(base) : null;
     },
     /** Connect a wallet and return a signer { address, family, provider, sign(message) } */
     async connect(id) {

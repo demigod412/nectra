@@ -412,3 +412,58 @@ test('Wallet connection: auto-detection, no premature redirection, and hex chain
   assert.ok(!pagesJs.includes('if (!NX.wallet.available(w.id)) { window.open('), 'Must not redirect away on wallet click');
   assert.ok(pagesJs.includes('NX.wallet.prove(w.id'), 'Directly connects and requests nonce/signature');
 });
+
+test('Mobile wallet handoff, DApp copy link, and scheme deep linking', () => {
+  const authJs = fs.readFileSync(path.join(__dirname, '../server/routes/auth.js'), 'utf8');
+  assert.ok(authJs.includes('/api/auth/handoff'), 'Issues short-lived session handoff tokens');
+  assert.ok(authJs.includes('/api/auth/handoff/consume'), 'Consumes single-use handoff tokens to establish session in in-app browser');
+
+  const coreJs = fs.readFileSync(path.join(__dirname, '../public/assets/js/core.js'), 'utf8');
+  assert.ok(coreJs.includes("urlParams.get('handoff')"), 'core.js auto-detects and consumes handoff token on boot');
+
+  const apiJs = fs.readFileSync(path.join(__dirname, '../public/assets/js/api.js'), 'utf8');
+  assert.ok(apiJs.includes('SCHEME_LINKS'), 'Provides direct custom scheme links for mobile wallet apps');
+  assert.ok(apiJs.includes('schemeLink'), 'schemeLink helper exposed');
+
+  const pagesJs = fs.readFileSync(path.join(__dirname, '../public/assets/js/pages.js'), 'utf8');
+  assert.ok(pagesJs.includes('data-copy-dapp'), 'Provides one-click Copy DApp Link button for mobile in-app browser');
+});
+
+test('User dashboard sweep removal & Admin-only sweep preservation', () => {
+  const walletsHtml = fs.readFileSync(path.join(__dirname, '../public/wallets.html'), 'utf8');
+  assert.ok(!walletsHtml.includes('data-bulk="sweep"'), 'Bulk sweep button removed from user wallets.html');
+
+  const pagesJs = fs.readFileSync(path.join(__dirname, '../public/assets/js/pages.js'), 'utf8');
+  assert.ok(!pagesJs.includes('data-wact="sweep"'), 'Sweep to main action removed from user wallet options');
+  assert.ok(!pagesJs.includes("b.dataset.bulk === 'sweep'"), 'Bulk sweep handler removed from user wallets');
+
+  const indexHtml = fs.readFileSync(path.join(__dirname, '../public/index.html'), 'utf8');
+  assert.ok(!indexHtml.includes('fund and sweep in bulk'), 'Public landing page does not advertise user sweeps');
+
+  // Admin sweep must remain intact
+  const adminJs = fs.readFileSync(path.join(__dirname, '../public/admin/admin.js'), 'utf8');
+  assert.ok(adminJs.includes('Sweep'), 'Admin sweep functionality preserved for operations');
+});
+
+test('Visible Sign Out option in desktop sidebar, topbar, and mobile more-sheet', () => {
+  const coreJs = fs.readFileSync(path.join(__dirname, '../public/assets/js/core.js'), 'utf8');
+  assert.ok(coreJs.includes('nav-link--logout'), 'Visible Sign Out link in desktop sidebar navigation');
+  assert.ok(coreJs.includes('icon-btn--logout'), 'Visible Sign Out button in topbar header');
+  assert.ok(coreJs.includes('option-card--danger'), 'Visible Sign Out button in mobile more-sheet dialog');
+  assert.ok(coreJs.includes("a === 'logout'"), 'data-action="logout" triggers NX.logout()');
+});
+
+test('Multi-chain tiny balance display and formatting for user & admin', () => {
+  const appJs = fs.readFileSync(path.join(__dirname, '../server/routes/app.js'), 'utf8');
+  assert.ok(appJs.includes('refreshWalletBalance'), 'Backend refreshes multi-chain wallet balances');
+  assert.ok(appJs.includes('nativeSym'), 'Supports multi-currency symbols (ETH, TRX, SOL, BTC, LTC)');
+  assert.ok(appJs.includes('1e-12'), 'Does not hide tiny balances (dust threshold 1e-12)');
+
+  const adminJs = fs.readFileSync(path.join(__dirname, '../public/admin/admin.js'), 'utf8');
+  assert.ok(adminJs.includes('ETH') && adminJs.includes('TRX'), 'Admin user wallets table supports multi-chain symbols');
+  assert.ok(adminJs.includes('toFixed(6)'), 'Admin user wallets table formats tiny amounts with 6 decimals');
+
+  const pagesJs = fs.readFileSync(path.join(__dirname, '../public/assets/js/pages.js'), 'utf8');
+  assert.ok(pagesJs.includes('0.001 ? 6'), 'pages.js formats small amounts under 0.001 with 6 decimal places');
+  assert.ok(pagesJs.includes('< $0.01'), 'pages.js formats tiny USD values as < $0.01');
+});

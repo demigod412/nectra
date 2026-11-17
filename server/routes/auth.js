@@ -105,6 +105,37 @@ async function sendLoginNotice(u, req) {
 }
 
 module.exports = (r) => {
+  /* ---- session handoff for mobile in-app browsers (Trust Wallet, MetaMask, etc.) ---- */
+  const handoffTokens = new Map();
+  setInterval(() => {
+    const t = Date.now();
+    for (const [tok, item] of handoffTokens) {
+      if (item.expiresAt < t) handoffTokens.delete(tok);
+    }
+  }, 60000).unref();
+
+  r.get('/api/auth/handoff', (c) => {
+    const u = S.requireUser(c);
+    const token = crypto.randomBytes(24).toString('hex');
+    handoffTokens.set(token, { userId: u.id, expiresAt: Date.now() + 5 * 60000 });
+    return { ok: true, handoff: token };
+  });
+
+  r.post('/api/auth/handoff/consume', (c) => {
+    const token = String(c.body && c.body.token || '').trim();
+    if (!token) fail(400, 'Missing handoff token');
+    const item = handoffTokens.get(token);
+    if (!item || item.expiresAt < Date.now()) {
+      handoffTokens.delete(token);
+      fail(400, 'Handoff token expired or invalid');
+    }
+    handoffTokens.delete(token);
+    const u = q.get('SELECT * FROM users WHERE id = ?', item.userId);
+    if (!u || u.status !== 'active') fail(403, 'Account not available');
+    S.createSession(c.res, c.req, u.id);
+    return { ok: true, user: publicUser(u) };
+  });
+
   /* ---- invites & waitlist ---- */
   r.post('/api/auth/invite/validate', (c) => {
     S.rateLimit(c.req, 'invite', 20, 60000);

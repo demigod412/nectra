@@ -75,7 +75,7 @@ module.exports = (r) => {
     return {
       user: { ...userBrief(u), antiPhishing: u.anti_phishing, invite: u.invite_code, referredBy: u.referred_by, risk: J(u.risk), paperMode: !!u.paper_mode, whitelistOnly: !!u.whitelist_only },
       portfolio: E.portfolioValue(u.id), balance: E.accountBalance(u.id),
-      wallets: q.all('SELECT id, name, address, kind, source, verified, balance FROM wallets WHERE user_id = ? ORDER BY id LIMIT 100', u.id),
+      wallets: q.all('SELECT id, name, address, chain, family, kind, source, verified, balance FROM wallets WHERE user_id = ? ORDER BY id LIMIT 100', u.id),
       bots: q.all('SELECT * FROM bots WHERE user_id = ?', u.id).map((b) => E.botPayload(b)),
       loans: q.all('SELECT * FROM loans WHERE user_id = ? ORDER BY id DESC', u.id).map(loanView),
       ledger: q.all('SELECT * FROM ledger WHERE user_id = ? ORDER BY id DESC LIMIT 50', u.id),

@@ -583,6 +583,10 @@
     const st = NX.data.status;
     const statusTip = st.level === 'green' ? 'All systems normal' : st.label;
     const bName = NX.brandName();
+    const mw = NX.data.mainWallet;
+    const mwSym = mw ? (mw.symbol || (mw.family === 'evm' ? 'ETH' : mw.family === 'tron' ? 'TRX' : mw.chain === 'Bitcoin' ? 'BTC' : mw.chain === 'Litecoin' ? 'LTC' : 'SOL')) : 'SOL';
+    const mwBal = mw ? (mw.balance != null ? mw.balance : (mw.sol || 0)) : 0;
+    const mwDec = mwBal > 0 && mwBal < 0.001 ? 6 : (mwBal < 0.01 && mwBal > 0 ? 4 : 2);
 
     // Sidebar (tablet rail / desktop labelled)
     const side = document.createElement('aside');
@@ -591,7 +595,9 @@
     side.innerHTML = `
       <a class="brand" href="dashboard.html" aria-label="${NX.esc(bName)} home">${NX.logo(30)}<span class="brand__name">${NX.esc(bName)}</span></a>
       <button class="nav-link sidebar__collapse" data-rail-toggle aria-label="Expand navigation" aria-expanded="false">${NX.icon('menu')}<span>Collapse</span></button>
-      <nav>${visibleNav().map((n) => n.g ? `<div class="nav-group">${n.g}</div>` : `<a class="nav-link" href="${n.id}.html" ${n.id === page ? 'aria-current="page"' : ''}>${NX.icon(n.icon)}<span>${n.label}</span>${n.badge && unread ? `<b class="nav-badge" data-unread>${unread}</b><i class="nav-dot" aria-hidden="true"></i>` : ''}</a>`).join('')}</nav>
+      <nav>${visibleNav().map((n) => n.g ? `<div class="nav-group">${n.g}</div>` : `<a class="nav-link" href="${n.id}.html" ${n.id === page ? 'aria-current="page"' : ''}>${NX.icon(n.icon)}<span>${n.label}</span>${n.badge && unread ? `<b class="nav-badge" data-unread>${unread}</b><i class="nav-dot" aria-hidden="true"></i>` : ''}</a>`).join('')}
+        <button class="nav-link nav-link--logout" data-action="logout" style="margin-top:auto;color:var(--text-muted);border-top:1px solid var(--border-subtle);background:none;border-left:none;border-right:none;border-bottom:none;cursor:pointer;width:100%;text-align:left;font:inherit;">${NX.icon('logout')}<span>Sign out</span></button>
+      </nav>
       <div class="sidebar__foot">
         <div class="sidebar__card"><span class="tag tag--paper">${NX.icon('activity')} Paper trading</span><span>Bots simulate trades with mock funds until you switch to live.</span></div>
         <div class="sidebar__card"><span class="seed-note">${NX.icon('shield')} Non-custodial</span><span>${NX.esc(bName)} will never ask for your seed phrase.</span></div>
@@ -606,8 +612,9 @@
       <div class="topbar__actions">
         <a class="status-btn" href="status.html" data-tip="${statusTip}" data-tip-pos="bottom" aria-label="System status: ${statusTip}"><span class="dot dot--${st.level} dot--pulse"></span></a>
         <a class="icon-btn" href="notifications.html" aria-label="Notifications, ${unread} unread">${NX.icon('bell')}${unread ? `<span class="badge-count" data-unread>${unread}</span>` : ''}</a>
-        <a class="balance-pill" href="wallets.html" aria-label="Main wallet balance">${NX.icon('wallet', 'ic--sm')}<b data-main-sol>${(NX.data.mainWallet ? NX.data.mainWallet.sol : 0).toFixed(NX.data.mainWallet && NX.data.mainWallet.sol < 0.01 && NX.data.mainWallet.sol > 0 ? 4 : 2)}</b> SOL</a>
+        <a class="balance-pill" href="wallets.html" aria-label="Main wallet balance">${NX.icon('wallet', 'ic--sm')}<b data-main-sol>${mwBal.toFixed(mwDec)}</b> ${mwSym}</a>
         <button class="icon-btn copilot-toggle" data-copilot-toggle aria-label="Toggle AI Copilot" aria-expanded="false" data-tip="AI Copilot" data-tip-pos="bottom">${NX.icon('sparkles')}</button>
+        <button class="icon-btn icon-btn--logout" data-action="logout" aria-label="Sign out" data-tip="Sign out" data-tip-pos="bottom" style="color:var(--text-muted);">${NX.icon('logout')}</button>
         <div class="menu-anchor avatar-wrap"><button class="avatar" data-menu-btn aria-haspopup="menu" aria-expanded="false" aria-label="Account menu">${NX.data.user.initials}</button>
           <div class="menu" role="menu">
             <div style="padding:10px 12px"><div class="strong">${NX.data.user.name}</div><div class="caption">${NX.data.user.email}</div></div>
@@ -663,7 +670,7 @@
     const more = document.createElement('dialog');
     more.className = 'modal';
     more.id = 'more-sheet';
-    more.innerHTML = `<div class="modal__head"><h2 class="modal__title">All pages</h2><button class="icon-btn icon-btn--sm" data-close aria-label="Close">${NX.icon('x')}</button></div><div class="modal__body"><div class="grid-2">${visibleNav().filter((n) => !n.g).map((n) => `<a class="option-card" href="${n.id}.html" ${n.id === page ? 'aria-pressed="true"' : ''}>${NX.icon(n.icon)}<span class="small strong">${n.label}</span></a>`).join('')}</div><button class="option-card" data-action="theme">${NX.icon('moon')}<span class="small strong">Toggle light / dark</span></button><p class="seed-note">${NX.icon('shield')} NECTRA will never ask for your seed phrase.</p></div>`;
+    more.innerHTML = `<div class="modal__head"><h2 class="modal__title">All pages</h2><button class="icon-btn icon-btn--sm" data-close aria-label="Close">${NX.icon('x')}</button></div><div class="modal__body"><div class="grid-2">${visibleNav().filter((n) => !n.g).map((n) => `<a class="option-card" href="${n.id}.html" ${n.id === page ? 'aria-pressed="true"' : ''}>${NX.icon(n.icon)}<span class="small strong">${n.label}</span></a>`).join('')}</div><button class="option-card" data-action="theme">${NX.icon('moon')}<span class="small strong">Toggle light / dark</span></button><button class="option-card option-card--danger" data-action="logout" style="margin-top:12px;color:var(--red);border-color:rgba(255,85,154,0.3);width:100%;cursor:pointer;background:rgba(255,85,154,0.06);display:flex;align-items:center;gap:10px;">${NX.icon('logout')}<span class="small strong">Sign out</span></button><p class="seed-note">${NX.icon('shield')} ${NX.esc(bName)} will never ask for your seed phrase.</p></div>`;
 
     const aurora = document.createElement('div');
     aurora.className = 'aurora';
@@ -938,6 +945,21 @@
 
   /* ---------- BOOT ---------- */
   NX.boot = async () => {
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const handoff = urlParams.get('handoff');
+      if (handoff) {
+        try {
+          await NX.post('/api/auth/handoff/consume', { token: handoff });
+          urlParams.delete('handoff');
+          const cleanSearch = urlParams.toString() ? ('?' + urlParams.toString()) : '';
+          const cleanUrl = window.location.pathname + cleanSearch + window.location.hash;
+          window.history.replaceState({}, '', cleanUrl);
+        } catch (e) {
+          console.warn('Handoff authentication failed:', e);
+        }
+      }
+    } catch (_) {}
     try {
       const cfg = await NX.get('/api/public/config');
       if (cfg) NX.applyBranding(cfg);

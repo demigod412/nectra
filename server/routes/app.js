@@ -37,7 +37,58 @@ function statusPayload() {
   const out = comps.some((c) => c.state === 'red') ? 'red' : comps.some((c) => c.state === 'amber') ? 'amber' : 'green';
   return { level: out, label: out === 'green' ? 'All systems normal' : out === 'amber' ? 'Running slower than usual' : 'Partial outage', components: comps, feed: { degraded: m.degraded, reason: m.reason } };
 }
-const walletRow = (w) => ({ id: w.id, name: w.name, address: w.address, chain: w.chain, family: w.family, kind: w.kind, source: w.source, provider: w.provider, folder: w.folder, verified: !!w.verified, sol: w.balance, balanceAt: w.balance_at, lastCheck: J(w.last_check, null) });
+const nativeSym = (family) => ({ evm: 'ETH', tron: 'TRX', solana: 'SOL', btc: 'BTC', ltc: 'LTC' }[family] || 'SOL');
+const walletRow = (w) => {
+  const sym = nativeSym(w.family);
+  const px = market.price(sym) || 0;
+  return {
+    id: w.id,
+    name: w.name,
+    address: w.address,
+    chain: w.chain,
+    family: w.family,
+    kind: w.kind,
+    source: w.source,
+    provider: w.provider,
+    folder: w.folder,
+    verified: !!w.verified,
+    sol: w.balance,
+    balance: w.balance,
+    symbol: sym,
+    usd: (w.balance || 0) * px,
+    balanceAt: w.balance_at,
+    lastCheck: J(w.last_check, null)
+  };
+};
+
+async function refreshWalletBalance(wallet) {
+  if (!wallet || wallet.source === 'demo') return wallet ? wallet.balance || 0 : 0;
+  let bal = 0;
+  let detail = null;
+  try {
+    if (wallet.family === 'solana') {
+      bal = await chain.getSolBalance(wallet.address);
+    } else if (wallet.family === 'evm') {
+      detail = await require('../chains/evm').balances(wallet.address);
+      if (detail) {
+        for (const net of Object.values(detail)) {
+          if (net && typeof net.native === 'number') bal += net.native;
+        }
+      }
+    } else if (wallet.family === 'tron') {
+      detail = await require('../chains/tron').balances(wallet.address);
+      if (detail) bal = detail.TRX || 0;
+    } else if (wallet.family === 'btc' || wallet.family === 'ltc') {
+      detail = await require('../chains/utxo').addressBalance(wallet.family.toUpperCase(), wallet.address);
+      if (detail) bal = (detail.confirmed || 0) + (detail.pending || 0);
+    }
+    q.run('UPDATE wallets SET balance = ?, balance_at = ?, last_check = ? WHERE id = ?',
+      bal, now(), detail ? JSON.stringify({ at: now(), detail }) : null, wallet.id);
+    return bal;
+  } catch (err) {
+    return wallet.balance || 0;
+  }
+}
 function botsFor(uid) { return q.all('SELECT * FROM bots WHERE user_id = ? ORDER BY created_at', uid).map((b) => E.botPayload(b)); }
 function onboarding(u) {
   return {
@@ -393,8 +444,19 @@ module.exports = (r) => {
   r.get('/api/wallets', (c) => {
     const u = S.requireUser(c);
     const ws = q.all("SELECT * FROM wallets WHERE user_id = ? ORDER BY kind = 'main' DESC, id", u.id).map(walletRow);
-    const sol = ws.reduce((a, w) => a + w.sol, 0);
-    return { main: ws.find((w) => w.kind === 'main') || null, wallets: ws.filter((w) => w.kind !== 'main'), folders: q.all('SELECT name FROM folders WHERE user_id = ? ORDER BY id', u.id).map((f) => f.name), totals: { sol, usd: sol * market.price('SOL'), count: ws.length }, solPrice: market.price('SOL'), accountBalance: E.accountBalance(u.id), demo: getSettings().demo_mode };
+    const sol = ws.filter((w) => w.family === 'solana').reduce((a, w) => a + (w.balance || 0), 0);
+    const eth = ws.filter((w) => w.family === 'evm').reduce((a, w) => a + (w.balance || 0), 0);
+    const totalUsd = ws.reduce((a, w) => a + (w.usd || 0), 0);
+    return {
+      main: ws.find((w) => w.kind === 'main') || null,
+      wallets: ws.filter((w) => w.kind !== 'main'),
+      folders: q.all('SELECT name FROM folders WHERE user_id = ? ORDER BY id', u.id).map((f) => f.name),
+      totals: { sol, eth, usd: totalUsd, count: ws.length },
+      solPrice: market.price('SOL'),
+      ethPrice: market.price('ETH'),
+      accountBalance: E.accountBalance(u.id),
+      demo: getSettings().demo_mode
+    };
   });
   r.post('/api/wallets', async (c) => {
     const u = S.requireUser(c);
@@ -421,6 +483,8 @@ module.exports = (r) => {
       u.id, str(c.body.name, 40) || (kind === 'main' ? 'Main wallet' : family === 'solana' ? 'Buyer ' + (count + 1) : chainName + ' wallet'), address, chainName, family, family === 'solana' ? kind : 'buyer', source, str(c.body.provider, 40) || null, folder, source === 'watch' ? 0 : 1, source === 'watch' ? null : now(), now()).id;
     require('../loans').creditScore(u.id);
     S.audit(u.id, 'wallet.add', id, { source, address }, c.req);
+    const createdW = q.get('SELECT * FROM wallets WHERE id = ?', id);
+    await refreshWalletBalance(createdW);
     return { wallet: walletRow(q.get('SELECT * FROM wallets WHERE id = ?', id)) };
   });
   r.patch('/api/wallets/:id', (c) => {
@@ -454,23 +518,12 @@ module.exports = (r) => {
     const u = S.requireUser(c); const w = ownWallet(u.id, c.params.id);
     S.rateLimit(c.req, 'refresh', 30, 60000);
     if (w.source === 'demo') return { wallet: walletRow(w), source: 'cached' };
-    if (w.family !== 'solana') {
-      let detail;
-      try {
-        if (w.family === 'evm') { const b = await require('../chains/evm').balances(w.address); detail = b; }
-        else if (w.family === 'tron') detail = await require('../chains/tron').balances(w.address);
-        else detail = await require('../chains/utxo').addressBalance(w.family.toUpperCase(), w.address);
-      } catch (e) { fail(502, 'Couldn’t reach that network — try again shortly'); }
-      q.run('UPDATE wallets SET last_check = ?, balance_at = ? WHERE id = ?', JSON.stringify({ at: now(), detail }), now(), w.id);
-      return { wallet: walletRow(q.get('SELECT * FROM wallets WHERE id = ?', w.id)), source: 'rpc', detail };
-    }
-    let bal;
-    try { bal = await chain.getSolBalance(w.address); } catch (e) { fail(502, 'Couldn’t reach the Solana network — try again shortly'); }
-    if (bal > w.balance + 1e-9 && w.balance_at) {
-      const t = recordTx(u.id, { type: 'Deposit', token: 'SOL', amount: +(bal - w.balance).toFixed(9), to: w.address, status: 'confirmed', confirmations: 32, note: 'Detected by balance refresh' });
+    const oldBal = w.balance || 0;
+    const newBal = await refreshWalletBalance(w);
+    if (w.family === 'solana' && newBal > oldBal + 1e-9 && w.balance_at) {
+      const t = recordTx(u.id, { type: 'Deposit', token: 'SOL', amount: +(newBal - oldBal).toFixed(9), to: w.address, status: 'confirmed', confirmations: 32, note: 'Detected by balance refresh' });
       notify(u.id, 'transfer', 'Deposit detected', `${t.amount} SOL arrived in ${w.name}.`, 'wallets.html');
     }
-    q.run('UPDATE wallets SET balance = ?, balance_at = ? WHERE id = ?', bal, now(), w.id);
     return { wallet: walletRow(q.get('SELECT * FROM wallets WHERE id = ?', w.id)), source: 'rpc' };
   });
   r.post('/api/folders', (c) => {
@@ -487,23 +540,41 @@ module.exports = (r) => {
     S.rateLimit(c.req, 'balances', 60, 60000);
     const px = (s) => market.price(s) || 0;
     const rows = [];
-    const add = (coin, netLabel, amount, family, opts = {}) => { if (amount > 1e-9) rows.push({ coin, chain: netLabel, family, amount, usd: amount * px(coin), canSend: opts.canSend !== false, canSwap: !!opts.canSwap, network: opts.network || netLabel }); };
+    const add = (coin, netLabel, amount, family, opts = {}) => {
+      if (amount > 1e-12) rows.push({ coin, chain: netLabel, family, amount, usd: amount * px(coin), canSend: opts.canSend !== false, canSwap: !!opts.canSwap, network: opts.network || netLabel });
+    };
     try {
       if (w.source === 'demo') { add('SOL', 'Solana (demo)', w.balance || 0, 'solana', { canSend: false }); return { wallet: walletRow(w), balances: rows, demo: true }; }
       if (w.family === 'solana') {
         const bal = await sol().walletBalances(w.address, SOL_CHECK.filter((x) => x !== 'SOL'));
         for (const coin of SOL_CHECK) add(coin, 'Solana', bal[coin] || 0, 'solana', { canSend: true, canSwap: true });
+        if (bal.SOL != null) q.run('UPDATE wallets SET balance = ?, balance_at = ? WHERE id = ?', bal.SOL, now(), w.id);
       } else if (w.family === 'evm') {
         const b = await evm().balances(w.address);
-        for (const [net, r2] of Object.entries(b)) { if (r2.error) continue; add(r2.nativeSym, net, r2.native || 0, 'evm', { network: net, canSend: true }); add('USDC', net, r2.USDC || 0, 'evm', { network: net, canSend: true }); add('USDT', net, r2.USDT || 0, 'evm', { network: net, canSend: true }); }
+        let evmNativeTotal = 0;
+        for (const [net, r2] of Object.entries(b)) {
+          if (r2.error) continue;
+          if (typeof r2.native === 'number') evmNativeTotal += r2.native;
+          add(r2.nativeSym, net, r2.native || 0, 'evm', { network: net, canSend: true });
+          add('USDC', net, r2.USDC || 0, 'evm', { network: net, canSend: true });
+          add('USDT', net, r2.USDT || 0, 'evm', { network: net, canSend: true });
+        }
+        q.run('UPDATE wallets SET balance = ?, balance_at = ?, last_check = ? WHERE id = ?', evmNativeTotal, now(), JSON.stringify({ at: now(), detail: b }), w.id);
       } else if (w.family === 'tron') {
-        const b = await tron().balances(w.address); add('TRX', 'Tron', b.TRX || 0, 'tron'); add('USDT', 'Tron', b.USDT || 0, 'tron');
+        const b = await tron().balances(w.address);
+        add('TRX', 'Tron', b.TRX || 0, 'tron');
+        add('USDT', 'Tron', b.USDT || 0, 'tron');
+        q.run('UPDATE wallets SET balance = ?, balance_at = ? WHERE id = ?', b.TRX || 0, now(), w.id);
       } else if (w.family === 'btc' || w.family === 'ltc') {
-        const b = await utxo().addressBalance(w.family.toUpperCase(), w.address); add(w.family.toUpperCase(), w.family.toUpperCase(), b.confirmed + b.pending, w.family, { canSend: false });
+        const b = await utxo().addressBalance(w.family.toUpperCase(), w.address);
+        const total = (b.confirmed || 0) + (b.pending || 0);
+        add(w.family.toUpperCase(), w.family.toUpperCase(), total, w.family, { canSend: false });
+        q.run('UPDATE wallets SET balance = ?, balance_at = ? WHERE id = ?', total, now(), w.id);
       }
     } catch (e) { fail(502, 'Couldn’t read balances from the network — try again shortly'); }
     q.run('UPDATE wallets SET balance_at = ? WHERE id = ?', now(), w.id);
-    return { wallet: walletRow(w), balances: rows.sort((a, b) => b.usd - a.usd), total: rows.reduce((a, b) => a + b.usd, 0) };
+    const updatedW = q.get('SELECT * FROM wallets WHERE id = ?', w.id);
+    return { wallet: walletRow(updatedW), balances: rows.sort((a, b) => b.usd - a.usd), total: rows.reduce((a, b) => a + b.usd, 0) };
   });
 
   /* Build an unsigned transfer the user's wallet signs: Solana (SOL/SPL) or EVM (native/ERC-20). Tron is signed client-side. */

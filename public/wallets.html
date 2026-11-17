@@ -50,10 +50,10 @@
         </div>
         <div class="main-wallet" id="mw-body">
           <div class="stack">
-            <div class="row between"><h2 class="card__title" id="mw-title"><i data-i="wallet"></i> Main wallet <span class="tag tag--pink">Solana</span></h2></div>
+            <div class="row between"><h2 class="card__title" id="mw-title"><i data-i="wallet"></i> Main wallet <span class="tag tag--pink" id="mw-chain-tag">Solana</span></h2></div>
             <div id="main-addr"></div>
-            <div class="balance"><span class="balance__value" id="main-bal">0.0000</span><span class="balance__unit">SOL</span><span class="caption mono" id="main-usd"></span></div>
-            <p class="caption">Deposit by sending SOL to this address from any wallet or exchange.</p>
+            <div class="balance"><span class="balance__value" id="main-bal">0.0000</span><span class="balance__unit" id="main-unit">SOL</span><span class="caption mono" id="main-usd"></span></div>
+            <p class="caption">Deposit by sending funds to this address from any wallet or exchange.</p>
           </div>
           <div class="row" style="align-self:end">
             <button class="btn" id="refresh-btn"><i data-i="refresh"></i> Refresh</button>
@@ -92,7 +92,6 @@
   <div class="bulkbar" id="bulkbar" role="region" aria-label="Bulk actions">
     <span class="bulkbar__count" id="bulk-count">0 selected</span>
     <button class="btn btn--sm btn--accent" data-bulk="fund"><i data-i="deposit" class="ic--sm"></i> Fund</button>
-    <button class="btn btn--sm" data-bulk="sweep"><i data-i="withdraw" class="ic--sm"></i> Sweep</button>
     <button class="btn btn--sm" data-bulk="move"><i data-i="folder" class="ic--sm"></i> Move</button>
     <button class="icon-btn icon-btn--sm" data-bulk="clear" aria-label="Clear selection"><i data-i="x"></i></button>
   </div>
