@@ -88,6 +88,19 @@
   };
   NX.isSol = (a) => /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(a || '');
   NX.isEvm = (a) => /^0x[a-fA-F0-9]{40}$/.test(a || '');
+  NX.isTron = (a) => /^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(a || '');
+  NX.isBtc = (a) => /^(bc1|[13])[a-zA-HJ-NP-Z0-9]{25,62}$/.test(a || '');
+  NX.isLtc = (a) => /^(ltc1|[LM3])[a-zA-HJ-NP-Z0-9]{25,62}$/.test(a || '');
+  NX.detectChain = (a) => {
+    const s = String(a || '').trim();
+    if (NX.isEvm(s)) return 'evm';
+    if (NX.isTron(s)) return 'tron';
+    if (NX.isBtc(s)) return 'btc';
+    if (NX.isLtc(s)) return 'ltc';
+    if (NX.isSol(s)) return 'solana';
+    return null;
+  };
+  NX.isValidAddress = (a) => !!NX.detectChain(a);
 
   /* ---------------- local keys (IndexedDB, non-extractable) ---------------- */
   const idb = () => new Promise((res, rej) => { const r = indexedDB.open('nectra-keys', 1); r.onupgradeneeded = () => r.result.createObjectStore('keys'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
@@ -134,7 +147,26 @@
     } else if (id === 'trust') {
       const p = announcedEvmProviders.get('com.trustwallet.app') || window.trustwallet;
       if (p) return p;
+    } else if (id === 'okx') {
+      const p = announcedEvmProviders.get('com.okex.wallet') || window.okxwallet;
+      if (p) return p;
+    } else if (id === 'bitget') {
+      const p = announcedEvmProviders.get('com.bitget.web3') || (window.bitkeep && window.bitkeep.ethereum);
+      if (p) return p;
+    } else if (id === 'rainbow') {
+      const p = announcedEvmProviders.get('me.rainbow') || window.rainbow;
+      if (p) return p;
+    } else if (id === 'binance') {
+      const p = announcedEvmProviders.get('com.binance.wallet') || window.BinanceChain;
+      if (p) return p;
     }
+
+    if (id === 'okx' && window.okxwallet) return window.okxwallet;
+    if (id === 'bitget' && window.bitkeep && window.bitkeep.ethereum) return window.bitkeep.ethereum;
+    if (id === 'rainbow' && window.rainbow) return window.rainbow;
+    if (id === 'coinbase' && window.coinbaseWalletExtension) return window.coinbaseWalletExtension;
+    if (id === 'trust' && window.trustwallet) return window.trustwallet;
+    if (id === 'binance' && window.BinanceChain) return window.BinanceChain;
 
     const e = window.ethereum;
     if (e) {
@@ -148,6 +180,15 @@
         } else if (id === 'coinbase') {
           const match = e.providers.find((p) => p.isCoinbaseWallet);
           if (match) return match;
+        } else if (id === 'okx') {
+          const match = e.providers.find((p) => p.isOkxWallet);
+          if (match) return match;
+        } else if (id === 'bitget') {
+          const match = e.providers.find((p) => p.isBitKeep);
+          if (match) return match;
+        } else if (id === 'rainbow') {
+          const match = e.providers.find((p) => p.isRainbow);
+          if (match) return match;
         } else if (id === 'binance') {
           const match = e.providers.find((p) => p.isBinance);
           if (match) return match;
@@ -157,13 +198,13 @@
       if (id === 'metamask' && e.isMetaMask) return e;
       if (id === 'trust' && (e.isTrust || e.isTrustWallet)) return e;
       if (id === 'coinbase' && e.isCoinbaseWallet) return e;
+      if (id === 'okx' && e.isOkxWallet) return e;
+      if (id === 'bitget' && e.isBitKeep) return e;
+      if (id === 'rainbow' && e.isRainbow) return e;
       if (id === 'binance' && (e.isBinance || window.BinanceChain)) return window.BinanceChain || e;
       // Injected window.ethereum fallback for EVM actions
       return e;
     }
-    if (id === 'coinbase' && window.coinbaseWalletExtension) return window.coinbaseWalletExtension;
-    if (id === 'trust' && window.trustwallet) return window.trustwallet;
-    if (id === 'binance' && window.BinanceChain) return window.BinanceChain;
     return null;
   }
 
@@ -180,6 +221,8 @@
     if (id === 'backpack') {
       if (window.backpack && (window.backpack.solana || window.backpack)) return window.backpack.solana || window.backpack;
     }
+    if (id === 'okx' && window.okxwallet && window.okxwallet.solana) return window.okxwallet.solana;
+    if (id === 'bitget' && window.bitkeep && window.bitkeep.solana) return window.bitkeep.solana;
     // General fallback: if any Solana wallet is injected, allow connection
     if (window.solana) return window.solana;
     if (window.phantom && window.phantom.solana) return window.phantom.solana;
@@ -199,28 +242,71 @@
     metamask: { family: 'evm', get: () => getEvmWallet('metamask') },
     coinbase: { family: 'evm', get: () => getEvmWallet('coinbase') },
     trust: { family: 'evm', get: () => getEvmWallet('trust') },
+    okx: { family: 'evm', get: () => getEvmWallet('okx') || getSolanaWallet('okx') },
     binance: { family: 'evm', get: () => getEvmWallet('binance') },
+    bitget: { family: 'evm', get: () => getEvmWallet('bitget') || getSolanaWallet('bitget') },
+    rainbow: { family: 'evm', get: () => getEvmWallet('rainbow') },
     evm: { family: 'evm', get: () => getEvmWallet('evm') },
+    browser: { family: 'evm', get: () => getEvmWallet('evm') || getSolanaWallet('browser') || getTronWallet() },
     tronlink: { family: 'tron', get: () => getTronWallet() }
   };
   function evmProvider(flag) {
     return getEvmWallet('evm');
   }
-  const INSTALL = { phantom: 'https://phantom.app', solflare: 'https://solflare.com', backpack: 'https://backpack.app', coinbase: 'https://www.coinbase.com/wallet', trust: 'https://trustwallet.com', binance: 'https://www.binance.com/en/web3wallet', metamask: 'https://metamask.io', evm: 'https://metamask.io', tronlink: 'https://www.tronlink.org' };
+  const INSTALL = {
+    phantom: 'https://phantom.app',
+    solflare: 'https://solflare.com',
+    backpack: 'https://backpack.app',
+    coinbase: 'https://www.coinbase.com/wallet',
+    trust: 'https://trustwallet.com',
+    binance: 'https://www.binance.com/en/web3wallet',
+    metamask: 'https://metamask.io',
+    okx: 'https://www.okx.com/web3',
+    bitget: 'https://web3.bitget.com',
+    rainbow: 'https://rainbow.me',
+    evm: 'https://metamask.io',
+    browser: 'https://metamask.io',
+    tronlink: 'https://www.tronlink.org'
+  };
   const DEEP_LINKS = {
     metamask: (u) => `https://metamask.app.link/dapp/${u.replace(/^https?:\/\//, '')}`,
     phantom: (u) => `https://phantom.app/ul/browse/${encodeURIComponent(u)}?ref=${encodeURIComponent(location.origin)}`,
     trust: (u) => `https://link.trustwallet.com/open_url?coin_id=60&url=${encodeURIComponent(u)}`,
     coinbase: (u) => `https://go.cb-w.com/dapp?cb_url=${encodeURIComponent(u)}`,
-    solflare: (u) => `https://solflare.com/ul/v1/browse/${encodeURIComponent(u)}?ref=${encodeURIComponent(location.origin)}`
+    solflare: (u) => `https://solflare.com/ul/v1/browse/${encodeURIComponent(u)}?ref=${encodeURIComponent(location.origin)}`,
+    rainbow: (u) => `https://rnbwapp.com/dapp/${u.replace(/^https?:\/\//, '')}`,
+    okx: (u) => `https://www.okx.com/download`,
+    bitget: (u) => `https://web3.bitget.com`
   };
   const SCHEME_LINKS = {
     metamask: (u) => `metamask://dapp/${u.replace(/^https?:\/\//, '')}`,
     trust: (u) => `trust://open_url?coin_id=60&url=${encodeURIComponent(u)}`,
     phantom: (u) => `phantom://browse/${encodeURIComponent(u)}`,
-    solflare: (u) => `solflare://browse/${encodeURIComponent(u)}`
+    solflare: (u) => `solflare://browse/${encodeURIComponent(u)}`,
+    coinbase: (u) => `cbwallet://dapp?cb_url=${encodeURIComponent(u)}`,
+    okx: (u) => `okx://wallet/dapp/details?dappUrl=${encodeURIComponent(u)}`,
+    bitget: (u) => `bitkeep://bkconnect?action=dapp&url=${encodeURIComponent(u)}`,
+    rainbow: (u) => `rainbow://dapp/${u.replace(/^https?:\/\//, '')}`,
+    binance: (u) => `binance://app?url=${encodeURIComponent(u)}`,
+    backpack: (u) => `backpack://browse?url=${encodeURIComponent(u)}`,
+    tronlink: (u) => `tronlinkoutside://pull.interface/v1?action=open&params=${encodeURIComponent(JSON.stringify({url: u}))}`
   };
-  const NAMES = { phantom: 'Phantom', solflare: 'Solflare', backpack: 'Backpack', metamask: 'MetaMask', coinbase: 'Coinbase Wallet', trust: 'Trust Wallet', binance: 'Binance Wallet', evm: 'Browser wallet', tronlink: 'TronLink', demo: 'Demo wallet' };
+  const NAMES = {
+    phantom: 'Phantom',
+    solflare: 'Solflare',
+    backpack: 'Backpack',
+    metamask: 'MetaMask',
+    coinbase: 'Coinbase Wallet',
+    trust: 'Trust Wallet',
+    okx: 'OKX Wallet',
+    binance: 'Binance Web3',
+    bitget: 'Bitget Wallet',
+    rainbow: 'Rainbow',
+    evm: 'Browser wallet',
+    browser: 'Browser wallet',
+    tronlink: 'TronLink',
+    demo: 'Demo wallet'
+  };
   const toHex = (s) => '0x' + Array.from(new TextEncoder().encode(s)).map((b) => b.toString(16).padStart(2, '0')).join('');
   const b64ToBytes = (b64) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
   const rejected = (e) => e && (e.code === 4001 || /reject|denied|cancel/i.test(e.message || ''));
@@ -245,6 +331,30 @@
         let addr = NX.store.get('demo-wallet');
         if (!addr || !(await idbGet(addr))) { addr = await newLocalKey(); NX.store.set('demo-wallet', addr); }
         const s = await localSigner(addr); s.provider = 'Demo wallet'; s.family = 'solana'; return s;
+      }
+      if (id === 'browser') {
+        const evm = getEvmWallet('evm');
+        if (evm) {
+          const [address] = await evm.request({ method: 'eth_requestAccounts' });
+          return { address, family: 'evm', provider: 'Browser wallet', injected: evm, sign: (msg) => evm.request({ method: 'personal_sign', params: [toHex(msg), address] }) };
+        }
+        const sol = getSolanaWallet('phantom') || window.solana;
+        if (sol) {
+          const res = await sol.connect();
+          const address = ((res && res.publicKey) || sol.publicKey).toString();
+          return { address, family: 'solana', provider: 'Browser wallet', injected: sol, sign: async (msg) => { const out = await sol.signMessage(new TextEncoder().encode(msg), 'utf8'); return NX.b58(out.signature || out); } };
+        }
+        const tron = getTronWallet();
+        if (tron) {
+          if (window.tronLink && window.tronLink.request) await window.tronLink.request({ method: 'tron_requestAccounts' });
+          const tw = window.tronWeb || (window.tronLink && window.tronLink.tronWeb);
+          if (!tw || !tw.defaultAddress || !tw.defaultAddress.base58) throw new Error('Unlock Tron wallet and try again');
+          return { address: tw.defaultAddress.base58, family: 'tron', provider: 'Tron wallet', injected: tw, sign: (msg) => tw.trx.signMessageV2(msg) };
+        }
+        const e = new Error('No DeFi wallet detected in this browser. Please open inside a Web3 wallet app or install an extension.');
+        e.install = INSTALL.metamask;
+        e.walletId = id;
+        throw e;
       }
       const P = PROVIDERS[id];
       const p = P && P.get();

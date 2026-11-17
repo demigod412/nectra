@@ -48,20 +48,31 @@ echo -e "\n${BOLD}[3/4] Updating NPM dependencies...${NC}"
 npm install --omit=dev
 
 # 4. Restart supervisor service
-echo -e "\n${BOLD}[4/4] Restarting systemd supervisor service...${NC}"
-if systemctl list-unit-files | grep -q "nectra.service"; then
+echo -e "\n${BOLD}[4/4] Restarting platform service...${NC}"
+RESTARTED=0
+if systemctl list-unit-files 2>/dev/null | grep -q "nectra.service"; then
   systemctl daemon-reload
   systemctl restart nectra.service
   sleep 2
   if systemctl is-active --quiet nectra.service; then
-    echo -e "${GREEN}[✓] Service nectra.service is ACTIVE and running!${NC}"
+    echo -e "${GREEN}[✓] Systemd service nectra.service is ACTIVE and running!${NC}"
+    RESTARTED=1
   else
-    echo -e "${RED}[!] Service failed to start. Checking journal logs:${NC}"
+    echo -e "${RED}[!] Systemd service failed to start. Checking journal logs:${NC}"
     journalctl -u nectra.service -n 20 --no-pager
     exit 1
   fi
-else
-  echo -e "${YELLOW}[!] nectra.service not found in systemd. If running under PM2 or Node manually, restart it now.${NC}"
+fi
+
+if command -v pm2 >/dev/null 2>&1; then
+  echo -e "${CYAN}[*] Reloading PM2 services...${NC}"
+  pm2 restart nectra 2>/dev/null || pm2 restart all 2>/dev/null || true
+  echo -e "${GREEN}[✓] PM2 service reloaded.${NC}"
+  RESTARTED=1
+fi
+
+if [ "$RESTARTED" -eq 0 ]; then
+  echo -e "${YELLOW}[!] Neither nectra.service nor pm2 detected. If running Node manually, restart it now.${NC}"
 fi
 
 echo -e "\n${GREEN}================================================================${NC}"

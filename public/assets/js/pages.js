@@ -36,14 +36,18 @@
 
   /* ---------- wallet picker sheet (connect / prove ownership) ---------- */
   const WALLETS = [
-    { id: 'phantom', name: 'Phantom', color: '#AB9FF2', ch: 'Solana' },
+    { id: 'phantom', name: 'Phantom', color: '#AB9FF2', ch: 'Solana · Ethereum · Polygon · Bitcoin' },
     { id: 'solflare', name: 'Solflare', color: '#FC7227', ch: 'Solana' },
-    { id: 'backpack', name: 'Backpack', color: '#E33E3F', ch: 'Solana' },
+    { id: 'backpack', name: 'Backpack', color: '#E33E3F', ch: 'Solana · Ethereum · Arbitrum' },
     { id: 'metamask', name: 'MetaMask', color: '#F6851B', ch: 'Ethereum · Base · Arbitrum · BSC · Polygon' },
-    { id: 'trust', name: 'Trust Wallet', color: '#3375BB', ch: 'Ethereum · BSC · Polygon · Base · Arbitrum' },
+    { id: 'trust', name: 'Trust Wallet', color: '#3375BB', ch: 'Multi-chain · EVM · Solana · Tron' },
     { id: 'coinbase', name: 'Coinbase Wallet', color: '#0052FF', ch: 'Ethereum · Base · Arbitrum · BSC · Polygon' },
-    { id: 'binance', name: 'Binance Wallet', color: '#F3BA2F', ch: 'BSC · Ethereum' },
+    { id: 'okx', name: 'OKX Wallet', color: '#1B1B1E', ch: 'Multi-chain · EVM · Solana · Tron · BTC' },
+    { id: 'binance', name: 'Binance Web3', color: '#F3BA2F', ch: 'BSC · Ethereum · Arbitrum · Polygon' },
+    { id: 'bitget', name: 'Bitget Wallet', color: '#00F0FF', ch: 'Multi-chain · EVM · Solana · Tron' },
+    { id: 'rainbow', name: 'Rainbow', color: '#001A70', ch: 'Ethereum · Arbitrum · Base · Optimism' },
     { id: 'tronlink', name: 'TronLink', color: '#EB0029', ch: 'Tron (TRX · USDT)' },
+    { id: 'browser', name: 'Browser Wallet', color: '#6366F1', ch: 'Any injected Web3 wallet (Rabby, Brave, Opera, SafePal)' },
     { id: 'demo', name: 'Demo wallet', color: '#5C5C66', ch: 'Browser key · demo mode only' }
   ];
   /** Wallet-provider logo: /assets/wallets/<id>.png with a colored-letter fallback */
@@ -171,14 +175,15 @@
       if (e.target.closest('[data-copy-dapp]')) {
         const btn = e.target.closest('[data-copy-dapp]');
         const urlToCopy = btn.dataset.copyDapp || window.location.href;
+        const wname = btn.dataset.wname || 'wallet';
         if (navigator.clipboard && navigator.clipboard.writeText) {
           navigator.clipboard.writeText(urlToCopy).then(() => {
-            NX.toast('DApp link copied!', { msg: 'Paste into MetaMask or Trust Wallet in-app browser' });
+            NX.toast(`${wname} DApp link copied!`, { msg: `Paste into ${wname} in-app browser to connect automatically` });
           }).catch(() => {
-            prompt('Copy this link into your wallet browser:', urlToCopy);
+            prompt(`Copy this link into your ${wname} browser:`, urlToCopy);
           });
         } else {
-          prompt('Copy this link into your wallet browser:', urlToCopy);
+          prompt(`Copy this link into your ${wname} browser:`, urlToCopy);
         }
         return;
       }
@@ -232,7 +237,7 @@
             <p class="small muted mt-8">If you have ${w.name} on your device, open it directly or copy the link to paste into its in-app browser.</p>
             <div class="row" style="gap:8px;margin:16px 0 20px 0;flex-wrap:wrap">
               ${isMobile && openUrl ? `<a class="btn btn--primary btn--sm" href="${openUrl}" target="_blank" rel="noopener">Open in ${w.name} App</a>` : ''}
-              ${isMobile ? `<button class="btn btn--accent btn--sm" data-copy-dapp="${esc(targetUrl)}">${I('copy', 'ic--sm')} Copy DApp Link</button>` : ''}
+              ${isMobile ? `<button class="btn btn--accent btn--sm" data-copy-dapp="${esc(targetUrl)}" data-wname="${esc(w.name)}">${I('copy', 'ic--sm')} Copy link for ${esc(w.name)}</button>` : ''}
               ${installUrl ? `<a class="btn ${isMobile ? 'btn--ghost' : 'btn--primary'} btn--sm" href="${installUrl}" target="_blank" rel="noopener">Get ${w.name}</a>` : ''}
               <button class="btn btn--ghost btn--sm" data-retry-wallet="${w.id}">Try Again</button>
               <button class="btn btn--ghost btn--sm" data-back-wallets>Back to list</button>
@@ -1033,16 +1038,21 @@
     }
     const wi = $('#watch-input'), wh = $('#watch-hint');
     wi.addEventListener('input', () => {
-      const v = wi.value.trim(), ok = NX.isSol(v) || NX.isEvm(v);
+      const v = wi.value.trim();
+      const chainType = NX.detectChain ? NX.detectChain(v) : (NX.isSol(v) ? 'solana' : NX.isEvm(v) ? 'evm' : null);
+      const ok = !!chainType;
       wi.classList.toggle('is-valid', ok); wi.classList.toggle('is-invalid', !!v && !ok);
       wh.className = 'hint ' + (v ? (ok ? 'hint--ok' : 'hint--error') : '');
-      wh.innerHTML = !v ? 'Paste a public address. Watch-only wallets can’t trade.' : ok ? `${I('check', 'ic--sm')} Valid ${NX.isSol(v) ? 'Solana' : 'EVM'} address` : `${I('alert', 'ic--sm')} That doesn’t look like a public address`;
+      const chainLabel = { evm: 'EVM (Ethereum/Base/Arbitrum/BSC/Polygon)', solana: 'Solana', tron: 'Tron (TRX)', btc: 'Bitcoin', ltc: 'Litecoin' }[chainType] || 'crypto';
+      wh.innerHTML = !v ? 'Paste a public address. Watch-only wallets can’t trade.' : ok ? `${I('check', 'ic--sm')} Valid ${chainLabel} address` : `${I('alert', 'ic--sm')} That doesn’t look like a public address`;
     });
     $('#watch-add').addEventListener('click', async (e) => {
       const v = wi.value.trim();
-      if (!(NX.isSol(v) || NX.isEvm(v))) { wi.classList.add('is-invalid'); return; }
-      const r = await NX.act(e.currentTarget, () => NX.post('/api/wallets', { source: 'watch', address: v, name: $('#watch-name').value, chain: NX.isSol(v) ? 'Solana' : 'Ethereum' }));
-      if (r) { NX.modal.close('watch-modal'); NX.toast('Watch-only address added'); wi.value = ''; $('#watch-name').value = ''; load(); }
+      const chainType = NX.detectChain ? NX.detectChain(v) : (NX.isSol(v) ? 'solana' : NX.isEvm(v) ? 'evm' : null);
+      if (!chainType) { wi.classList.add('is-invalid'); return; }
+      const chainName = { evm: 'Ethereum', solana: 'Solana', tron: 'Tron', btc: 'Bitcoin', ltc: 'Litecoin' }[chainType] || 'Multi-chain';
+      const r = await NX.act(e.currentTarget, () => NX.post('/api/wallets', { source: 'watch', address: v, name: $('#watch-name').value, chain: chainName, family: chainType }));
+      if (r) { NX.modal.close('watch-modal'); NX.toast('Watch-only address added', { msg: `${chainName} · ${F.short(v)}` }); wi.value = ''; $('#watch-name').value = ''; load(); }
     });
     document.addEventListener('nx:tx', () => load());
     await load();

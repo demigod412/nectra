@@ -467,3 +467,22 @@ test('Multi-chain tiny balance display and formatting for user & admin', () => {
   assert.ok(pagesJs.includes('0.001 ? 6'), 'pages.js formats small amounts under 0.001 with 6 decimal places');
   assert.ok(pagesJs.includes('< $0.01'), 'pages.js formats tiny USD values as < $0.01');
 });
+
+test('Multi-chain DeFi wallet address validation, multi-wallet detection, and update script', () => {
+  const apiJs = fs.readFileSync(path.join(__dirname, '../public/assets/js/api.js'), 'utf8');
+  assert.ok(apiJs.includes('NX.isTron'), 'Tron address validation supported');
+  assert.ok(apiJs.includes('NX.isBtc'), 'Bitcoin address validation supported');
+  assert.ok(apiJs.includes('NX.isLtc'), 'Litecoin address validation supported');
+  assert.ok(apiJs.includes('NX.detectChain'), 'Multi-chain auto-detection helper exposed');
+  assert.ok(apiJs.includes('okx') && apiJs.includes('bitget') && apiJs.includes('rainbow'), 'Expanded DeFi wallet providers supported');
+
+  const pagesJs = fs.readFileSync(path.join(__dirname, '../public/assets/js/pages.js'), 'utf8');
+  assert.ok(pagesJs.includes("'okx'") && pagesJs.includes("'bitget'"), 'WALLETS list includes OKX and Bitget');
+  assert.ok(pagesJs.includes("'browser'"), 'WALLETS list includes generic Browser/Injected wallet');
+  assert.ok(pagesJs.includes('NX.detectChain'), 'Watch-only wallet input uses auto chain detection');
+
+  const updateSh = fs.readFileSync(path.join(__dirname, '../update.sh'), 'utf8');
+  assert.ok(updateSh.includes('git fetch origin main'), 'update.sh fetches from origin main');
+  assert.ok(updateSh.includes('npm install --omit=dev'), 'update.sh updates npm dependencies');
+  assert.ok(updateSh.includes('systemctl restart nectra.service') || updateSh.includes('pm2 restart'), 'update.sh restarts service');
+});

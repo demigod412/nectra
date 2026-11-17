@@ -462,7 +462,17 @@ module.exports = (r) => {
     const u = S.requireUser(c);
     const source = ['watch', 'connected', 'generated', 'demo'].includes(c.body.source) ? c.body.source : 'watch';
     let address = str(c.body.address, 64);
-    let family = ['solana', 'evm', 'tron', 'btc', 'ltc'].includes(c.body.family) ? c.body.family : chain.isEvmAddress(address) ? 'evm' : 'solana';
+    let family = ['solana', 'evm', 'tron', 'btc', 'ltc'].includes(c.body.family)
+      ? c.body.family
+      : chain.isEvmAddress(address)
+        ? 'evm'
+        : require('../chains/tron').isAddress(address)
+          ? 'tron'
+          : require('../chains/utxo').isAddress('BTC', address)
+            ? 'btc'
+            : require('../chains/utxo').isAddress('LTC', address)
+              ? 'ltc'
+              : 'solana';
     if (source !== 'watch') {
       const n = await consumeWalletProof(c.body, 'link', u.id);   // must prove ownership by signing
       address = n.address; family = n.family;
