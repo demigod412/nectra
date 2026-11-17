@@ -668,14 +668,17 @@ module.exports = (r) => {
   r.post('/api/admin/smtp/test', async (c) => {
     S.requirePerm(c, permFor(c));
     const to = (c.body && c.body.to) || c.auth.user.email || 'admin@nectra.local';
+    const settings = getSettings();
+    const pName = (c.body && (c.body.platform_name || c.body.platformName)) || settings.platform_name || 'NECTRA';
     const customConfig = (c.body && (c.body.host || c.body.smtp_host)) ? {
       host: c.body.host || c.body.smtp_host,
       port: +(c.body.port || c.body.smtp_port || 587),
       user: c.body.user || c.body.smtp_user || '',
       pass: c.body.pass || c.body.smtp_pass || '',
       from: c.body.from || c.body.smtp_from || '',
-      secure: c.body.secure != null ? !!c.body.secure : (c.body.smtp_secure != null ? !!c.body.smtp_secure : undefined)
-    } : null;
+      secure: c.body.secure != null ? !!c.body.secure : (c.body.smtp_secure != null ? !!c.body.smtp_secure : undefined),
+      platformName: pName
+    } : { platformName: pName };
     try {
       const { testSmtpConnection } = require('../mail');
       const res = await testSmtpConnection(to, customConfig);

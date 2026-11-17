@@ -756,10 +756,11 @@
       const pass = $('[data-k="smtp_pass"]')?.value || '';
       const from = $('[data-k="smtp_from"]')?.value || '';
       const secure = $('[data-k="smtp_secure"]')?.checked;
+      const platform_name = $('[data-k="platform_name"]')?.value || (counts.settings && counts.settings.platform_name) || '';
       await act(e.currentTarget, async () => {
         const res = await NX.post('/api/admin/smtp/test', {
           to: targetEmail,
-          host, port, user, pass, from, secure
+          host, port, user, pass, from, secure, platform_name
         });
         NX.toast(res && res.message ? res.message : 'Test email sent successfully!');
       });
@@ -847,17 +848,17 @@
   }
 
   function updateAdmin2FABadges() {
-    const u = NX.data.user;
+    const u = (NX.data && NX.data.user) || {};
     const topBtn = $('#adm-2fa-btn');
     const sideTag = $('#adm-side-2fa-tag');
     if (topBtn) {
       if (u && u.twoFA) {
         topBtn.className = 'btn btn--sm btn--ghost';
-        topBtn.innerHTML = `<span class="dot dot--green"></span> 2FA Active`;
+        topBtn.innerHTML = `<span class="dot dot--green"></span> <svg class="ic ic--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M9 10h6M9 14h4"/></svg> <span>2FA Active</span>`;
         topBtn.title = 'Two-Factor Authentication is active on your admin account';
       } else {
         topBtn.className = 'btn btn--sm btn--accent';
-        topBtn.innerHTML = `<span class="dot dot--amber dot--pulse"></span> ${I('key2fa', 'ic--sm')} Set up 2FA`;
+        topBtn.innerHTML = `<span class="dot dot--pink dot--pulse"></span> <svg class="ic ic--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M9 10h6M9 14h4"/></svg> <span>Set up 2FA</span>`;
         topBtn.title = 'Two-Factor Authentication is off. Click to set up.';
       }
     }
@@ -866,7 +867,7 @@
         sideTag.className = 'tag tag--sm tag--green';
         sideTag.textContent = 'Active';
       } else {
-        sideTag.className = 'tag tag--sm tag--amber';
+        sideTag.className = 'tag tag--sm tag--pink';
         sideTag.textContent = 'Off';
       }
     }
@@ -876,7 +877,25 @@
     const modal = $('#adm-2fa-modal');
     const body = $('#adm-2fa-body');
     if (!modal || !body) return;
-    const u = NX.data.user;
+
+    body.innerHTML = '<div class="skel skel--row"></div><div class="skel skel--row"></div>';
+    NX.modal.open(modal);
+
+    let u = (NX.data && NX.data.user) || {};
+    if (!u.id) {
+      try {
+        const me = await NX.get('/api/auth/me');
+        if (me && me.user) {
+          NX.data.user = me.user;
+          u = me.user;
+          updateAdmin2FABadges();
+        }
+      } catch (err) {
+        body.innerHTML = `<div class="note note--danger">${I('alert')}<span>${esc(err.message || 'Please sign in to manage 2FA')}</span></div>`;
+        NX.hydrateIcons(body);
+        return;
+      }
+    }
 
     if (u && u.twoFA) {
       body.innerHTML = `
@@ -893,13 +912,13 @@
         </div>
       `;
       NX.hydrateIcons(body);
-      NX.modal.open(modal);
 
       $('#adm-tfa-disable-btn')?.addEventListener('click', async () => {
         const code = prompt('Enter the 6-digit code from your authenticator app to confirm disabling 2FA:');
         if (!code) return;
         try {
           await NX.post('/api/me/2fa/disable', { code: code.trim() });
+          if (NX.data.user) NX.data.user.twoFA = false;
           u.twoFA = false;
           updateAdmin2FABadges();
           NX.modal.close(modal);
@@ -913,9 +932,6 @@
     }
 
     // Setting up 2FA
-    body.innerHTML = '<div class="skel skel--row"></div><div class="skel skel--row"></div>';
-    NX.modal.open(modal);
-
     let setupData;
     try {
       setupData = await NX.post('/api/me/2fa/setup');
@@ -966,6 +982,7 @@
         try {
           await NX.post('/api/me/2fa/enable', { code });
           otp.valid();
+          if (NX.data.user) NX.data.user.twoFA = true;
           u.twoFA = true;
           updateAdmin2FABadges();
           setTimeout(() => {
@@ -984,6 +1001,15 @@
     });
     setTimeout(() => otp.clear(), 100);
   };
+
+  // Delegated click listener ensures 2FA triggers work regardless of render timing
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('#adm-2fa-btn, #adm-side-2fa, [data-action="admin-2fa"]');
+    if (btn) {
+      e.preventDefault();
+      if (window.NX && window.NX.openAdmin2FAModal) window.NX.openAdmin2FAModal();
+    }
+  });
 
   NX.pages = { admin: async () => {
     let me;
@@ -1006,5 +1032,11 @@
     await route();
     setInterval(() => !document.hidden && refreshCounts(), 30000);
   } };
-  document.addEventListener('DOMContentLoaded', () => NX.boot());
+
+  /* Boot admin console safely across all browser readyStates */
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => window.NX && window.NX.boot && window.NX.boot());
+  } else {
+    window.NX && window.NX.boot && window.NX.boot();
+  }
 })();

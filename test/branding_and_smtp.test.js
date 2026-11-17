@@ -8,7 +8,7 @@ const net = require('node:net');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const { testSmtpConnection, smtpSend } = require('../server/mail');
+const { testSmtpConnection, smtpSend, formatMimeFrom } = require('../server/mail');
 const { getSettings, setSetting, q, tx } = require('../server/db');
 
 test('White-label platform branding & dynamic adoption', async () => {
@@ -161,4 +161,76 @@ test('SMTP client handles complex FROM formats without 501 syntax error', async 
   } finally {
     server.close();
   }
+});
+
+test('formatMimeFrom and platform display name formatting in email preview', async () => {
+  // 1. Direct unit checks for formatMimeFrom
+  assert.equal(formatMimeFrom('ApexTrade', 'support@apex.com'), 'ApexTrade <support@apex.com>');
+  assert.equal(formatMimeFrom('Apex, LLC', 'support@apex.com'), '"Apex, LLC" <support@apex.com>');
+  assert.equal(formatMimeFrom('ApexTrade', 'ApexTrade <support@apex.com>'), 'ApexTrade <support@apex.com>');
+  // Non-ASCII encoded with RFC 2047
+  assert.ok(formatMimeFrom('Étoile Trade', 'support@apex.com').startsWith('=?UTF-8?B?'));
+
+  // 2. Verify DATA payload in SMTP server receives configured company name instead of "noreply"
+  let receivedData = '';
+  const server = net.createServer((sock) => {
+    sock.write('220 mock.smtp.local Service ready\r\n');
+    let collectingData = false;
+    sock.on('data', (d) => {
+      const text = d.toString();
+      if (collectingData) {
+        receivedData += text;
+        if (text.includes('\r\n.\r\n') || text === '.\r\n') {
+          collectingData = false;
+          sock.write('250 2.0.0 OK: queued\r\n');
+        }
+      } else if (text.startsWith('EHLO')) {
+        sock.write('250-mock.smtp.local\r\n250 8BITMIME\r\n');
+      } else if (text.startsWith('MAIL FROM:')) {
+        sock.write('250 2.1.0 Sender OK\r\n');
+      } else if (text.startsWith('RCPT TO:')) {
+        sock.write('250 2.1.5 Recipient OK\r\n');
+      } else if (text.startsWith('DATA')) {
+        collectingData = true;
+        sock.write('354 Start mail input\r\n');
+      } else if (text.startsWith('QUIT')) {
+        sock.write('221 2.0.0 Bye\r\n');
+        sock.end();
+      }
+    });
+  });
+
+  await new Promise((res) => server.listen(0, '127.0.0.1', res));
+  const port = server.address().port;
+
+  try {
+    // Test with "noreply <no-reply@apex.com>" in from and custom platformName "ApexTrade"
+    await testSmtpConnection('trader@apex.com', {
+      host: '127.0.0.1',
+      port,
+      from: 'noreply <no-reply@apex.com>',
+      platformName: 'ApexTrade',
+      secure: false
+    });
+
+    // Verify DATA payload has "From: ApexTrade <no-reply@apex.com>" instead of "From: noreply <...>"
+    assert.ok(receivedData.includes('From: ApexTrade <no-reply@apex.com>'), `Expected From header to display ApexTrade, got:\n${receivedData}`);
+    assert.ok(receivedData.includes('Reply-To: ApexTrade <no-reply@apex.com>'));
+  } finally {
+    server.close();
+  }
+});
+
+test('Admin 2FA UI elements have fallback markup, inline triggers, and resilient boot', () => {
+  const indexHtml = fs.readFileSync(path.join(__dirname, '../public/admin/index.html'), 'utf8');
+  assert.ok(indexHtml.includes('id="adm-2fa-btn"'));
+  assert.ok(indexHtml.includes('id="adm-side-2fa"'));
+  assert.ok(indexHtml.includes('onclick="window.NX && window.NX.openAdmin2FAModal && window.NX.openAdmin2FAModal()"'));
+  assert.ok(indexHtml.includes('admin.js?v=2.2'));
+
+  const adminJs = fs.readFileSync(path.join(__dirname, '../public/admin/admin.js'), 'utf8');
+  assert.ok(adminJs.includes('document.readyState === \'loading\''));
+  assert.ok(adminJs.includes('NX.openAdmin2FAModal'));
+  assert.ok(adminJs.includes('updateAdmin2FABadges'));
+  assert.ok(adminJs.includes('platform_name'));
 });

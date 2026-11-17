@@ -44,6 +44,21 @@ function extractEmail(str) {
   return s.replace(/[<>"'() \t\r\n]/g, '').trim().toLowerCase();
 }
 
+function formatMimeFrom(displayName, cleanEmail) {
+  const email = extractEmail(cleanEmail);
+  const name = String(displayName || '').replace(/[\r\n]/g, '').trim();
+  if (!name) return `<${email}>`;
+  // RFC 2047 Base64 encoding if non-ASCII characters present
+  if (/[^\x20-\x7E]/.test(name)) {
+    return `=?UTF-8?B?${Buffer.from(name).toString('base64')}?= <${email}>`;
+  }
+  // Quote if special RFC 5322 characters are present
+  if (/[,;"\\]/.test(name)) {
+    return `"${name.replace(/["\\]/g, '')}" <${email}>`;
+  }
+  return `${name} <${email}>`;
+}
+
 function smtpSend({ to, subject, text, config = null }) {
   const cfg = config || getMailConfig();
   const host = (cfg.host || '').trim();
@@ -73,11 +88,27 @@ function smtpSend({ to, subject, text, config = null }) {
     cleanFrom = `no-reply@${hostDomain}`;
   }
 
-  // Proper RFC 5322 MIME From header
-  const platform = (cfg.platformName || 'Platform').replace(/["\r\n]/g, '').trim();
-  const mimeFrom = (from && from.includes('<') && from.includes('>'))
-    ? from
-    : `"${platform}" <${cleanFrom}>`;
+  // Proper RFC 5322 MIME From header: ensure platform/company name is always the display name
+  let s = {};
+  try { s = getSettings ? getSettings() : {}; } catch (_) {}
+  const platform = (cfg.platformName || s.platform_name || 'NECTRA').replace(/[\r\n]/g, '').trim();
+
+  let displayName = platform;
+  if (from && from.includes('<')) {
+    const m = from.match(/^(.*?)\s*<[^>]+>/);
+    if (m && m[1]) {
+      const explicit = m[1].replace(/["']/g, '').trim();
+      const generic = ['noreply', 'no-reply', 'no_reply', 'mailer', 'smtp', 'admin', 'platform', 'nectra', 'email'];
+      if (explicit && !generic.includes(explicit.toLowerCase())) {
+        displayName = explicit;
+      }
+    }
+  }
+  if (!displayName || ['noreply', 'no-reply', 'no_reply'].includes(displayName.toLowerCase())) {
+    displayName = platform;
+  }
+
+  const mimeFrom = formatMimeFrom(displayName, cleanFrom);
 
   const domain = host.includes('.') ? host.split('.').slice(-2).join('.') : 'domain.local';
 
@@ -179,6 +210,7 @@ function smtpSend({ to, subject, text, config = null }) {
 
       const msg = [
         `From: ${mimeFrom}`,
+        `Reply-To: ${mimeFrom}`,
         `To: <${cleanTo}>`,
         `Subject: ${subject}`,
         'MIME-Version: 1.0',
@@ -232,4 +264,4 @@ async function testSmtpConnection(targetEmail, customConfig = null) {
   return { ok: true, recipient: targetEmail };
 }
 
-module.exports = { sendMail, smtpSend, getMailConfig, testSmtpConnection };
+module.exports = { sendMail, smtpSend, getMailConfig, testSmtpConnection, formatMimeFrom };
