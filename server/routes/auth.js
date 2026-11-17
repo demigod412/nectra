@@ -120,10 +120,12 @@ module.exports = (r) => {
     if (!emailOk(email)) fail(400, 'Enter a valid email address');
     const ex = q.get('SELECT id FROM waitlist WHERE email = ?', email);
     if (!ex) q.run('INSERT INTO waitlist(email, referral, created_at) VALUES(?,?,?)', email, String(c.body.referral || '').slice(0, 40) || null, now());
-    const pos = q.val('SELECT COUNT(*) FROM waitlist WHERE status = ?', 'pending');
-    const pName = getSettings().platform_name || 'NECTRA';
-    if (!ex) { sendMail(email, `You’re on the ${pName} waitlist`, `Thanks for your interest! Your position: #${pos}. We’ll email your invite code soon.`); notifyAdmins('security', 'New waitlist signup', email, '/admin#waitlist'); }
-    return { ok: true, position: pos };
+    const pName = getSettings().platform_name || 'Ascendex';
+    if (!ex) {
+      sendMail(email, `You’re on the ${pName} waitlist`, `Thanks for your interest! We’ve added you to the waitlist and will email your invite code as soon as your access is approved.`);
+      notifyAdmins('security', 'New waitlist signup', email, '/admin#waitlist');
+    }
+    return { ok: true };
   });
 
   /* ---- email registration ---- */

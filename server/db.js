@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS users (
   invite_code TEXT, referred_by INTEGER,
   prefs TEXT NOT NULL DEFAULT '{}', risk TEXT NOT NULL DEFAULT '{}',
   whitelist_only INTEGER NOT NULL DEFAULT 0,
-  paper_mode INTEGER NOT NULL DEFAULT 1,
+  paper_mode INTEGER NOT NULL DEFAULT 0,
   onboarding TEXT NOT NULL DEFAULT '{}',
   created_at INTEGER NOT NULL, last_login_at INTEGER
 );

@@ -110,24 +110,110 @@
   }
 
   /* ---------------- injected wallet providers (Solana · EVM · Tron) ---------------- */
+  const announcedEvmProviders = new Map();
+  if (typeof window !== 'undefined') {
+    window.addEventListener('eip6963:announceProvider', (e) => {
+      if (e.detail && e.detail.info && e.detail.provider) {
+        const info = e.detail.info;
+        const key = (info.rdns || info.name || '').toLowerCase();
+        announcedEvmProviders.set(key, e.detail.provider);
+      }
+    });
+    try { window.dispatchEvent(new Event('eip6963:requestProvider')); } catch (_) {}
+  }
+
+  function getEvmWallet(id) {
+    if (typeof window === 'undefined') return null;
+    // Check EIP-6963 announcements first
+    if (id === 'metamask') {
+      const p = announcedEvmProviders.get('io.metamask') || announcedEvmProviders.get('metamask');
+      if (p) return p;
+    } else if (id === 'coinbase') {
+      const p = announcedEvmProviders.get('com.coinbase.wallet') || window.coinbaseWalletExtension;
+      if (p) return p;
+    } else if (id === 'trust') {
+      const p = announcedEvmProviders.get('com.trustwallet.app') || window.trustwallet;
+      if (p) return p;
+    }
+
+    const e = window.ethereum;
+    if (e) {
+      if (e.providers && Array.isArray(e.providers) && e.providers.length) {
+        if (id === 'metamask') {
+          const match = e.providers.find((p) => p.isMetaMask && !p.isBraveWallet);
+          if (match) return match;
+        } else if (id === 'trust') {
+          const match = e.providers.find((p) => p.isTrust || p.isTrustWallet);
+          if (match) return match;
+        } else if (id === 'coinbase') {
+          const match = e.providers.find((p) => p.isCoinbaseWallet);
+          if (match) return match;
+        } else if (id === 'binance') {
+          const match = e.providers.find((p) => p.isBinance);
+          if (match) return match;
+        }
+        return e.providers[0];
+      }
+      if (id === 'metamask' && e.isMetaMask) return e;
+      if (id === 'trust' && (e.isTrust || e.isTrustWallet)) return e;
+      if (id === 'coinbase' && e.isCoinbaseWallet) return e;
+      if (id === 'binance' && (e.isBinance || window.BinanceChain)) return window.BinanceChain || e;
+      // Injected window.ethereum fallback for EVM actions
+      return e;
+    }
+    if (id === 'coinbase' && window.coinbaseWalletExtension) return window.coinbaseWalletExtension;
+    if (id === 'trust' && window.trustwallet) return window.trustwallet;
+    if (id === 'binance' && window.BinanceChain) return window.BinanceChain;
+    return null;
+  }
+
+  function getSolanaWallet(id) {
+    if (typeof window === 'undefined') return null;
+    if (id === 'phantom') {
+      if (window.phantom && window.phantom.solana) return window.phantom.solana;
+      if (window.solana && (window.solana.isPhantom || !window.solflare)) return window.solana;
+    }
+    if (id === 'solflare') {
+      if (window.solflare) return window.solflare;
+      if (window.solana && window.solana.isSolflare) return window.solana;
+    }
+    if (id === 'backpack') {
+      if (window.backpack && (window.backpack.solana || window.backpack)) return window.backpack.solana || window.backpack;
+    }
+    // General fallback: if any Solana wallet is injected, allow connection
+    if (window.solana) return window.solana;
+    if (window.phantom && window.phantom.solana) return window.phantom.solana;
+    if (window.solflare) return window.solflare;
+    return null;
+  }
+
+  function getTronWallet() {
+    if (typeof window === 'undefined') return null;
+    return window.tronLink || (window.tronWeb && (window.tronWeb.defaultAddress || window.tronWeb.trx) && window.tronWeb) || null;
+  }
+
   const PROVIDERS = {
-    phantom: { family: 'solana', get: () => (window.phantom && window.phantom.solana) || (window.solana && window.solana.isPhantom && window.solana) },
-    solflare: { family: 'solana', get: () => window.solflare },
-    backpack: { family: 'solana', get: () => (window.backpack && (window.backpack.solana || window.backpack)) || null },
-    metamask: { family: 'evm', get: () => evmProvider('isMetaMask') },
-    coinbase: { family: 'evm', get: () => window.coinbaseWalletExtension || evmProvider('isCoinbaseWallet') },
-    trust: { family: 'evm', get: () => window.trustwallet || evmProvider('isTrust') || evmProvider('isTrustWallet') },
-    binance: { family: 'evm', get: () => window.BinanceChain || evmProvider('isBinance') },
-    evm: { family: 'evm', get: () => window.ethereum || null },
-    tronlink: { family: 'tron', get: () => window.tronLink || (window.tronWeb && window.tronWeb.defaultAddress && window) || null }
+    phantom: { family: 'solana', get: () => getSolanaWallet('phantom') },
+    solflare: { family: 'solana', get: () => getSolanaWallet('solflare') },
+    backpack: { family: 'solana', get: () => getSolanaWallet('backpack') },
+    metamask: { family: 'evm', get: () => getEvmWallet('metamask') },
+    coinbase: { family: 'evm', get: () => getEvmWallet('coinbase') },
+    trust: { family: 'evm', get: () => getEvmWallet('trust') },
+    binance: { family: 'evm', get: () => getEvmWallet('binance') },
+    evm: { family: 'evm', get: () => getEvmWallet('evm') },
+    tronlink: { family: 'tron', get: () => getTronWallet() }
   };
   function evmProvider(flag) {
-    const e = window.ethereum;
-    if (!e) return null;
-    if (e.providers && e.providers.length) return e.providers.find((p) => p[flag]) || null;
-    return e[flag] ? e : null;
+    return getEvmWallet('evm');
   }
   const INSTALL = { phantom: 'https://phantom.app', solflare: 'https://solflare.com', backpack: 'https://backpack.app', coinbase: 'https://www.coinbase.com/wallet', trust: 'https://trustwallet.com', binance: 'https://www.binance.com/en/web3wallet', metamask: 'https://metamask.io', evm: 'https://metamask.io', tronlink: 'https://www.tronlink.org' };
+  const DEEP_LINKS = {
+    metamask: (u) => `https://metamask.app.link/dapp/${u.replace(/^https?:\/\//, '')}`,
+    phantom: (u) => `https://phantom.app/ul/browse/${encodeURIComponent(u)}?ref=${encodeURIComponent(location.origin)}`,
+    trust: (u) => `https://link.trustwallet.com/open_url?coin_id=60&url=${encodeURIComponent(u)}`,
+    coinbase: (u) => `https://go.cb-w.com/dapp?cb_url=${encodeURIComponent(u)}`,
+    solflare: (u) => `https://solflare.com/ul/v1/browse/${encodeURIComponent(u)}?ref=${encodeURIComponent(location.origin)}`
+  };
   const NAMES = { phantom: 'Phantom', solflare: 'Solflare', backpack: 'Backpack', metamask: 'MetaMask', coinbase: 'Coinbase Wallet', trust: 'Trust Wallet', binance: 'Binance Wallet', evm: 'Browser wallet', tronlink: 'TronLink', demo: 'Demo wallet' };
   const toHex = (s) => '0x' + Array.from(new TextEncoder().encode(s)).map((b) => b.toString(16).padStart(2, '0')).join('');
   const b64ToBytes = (b64) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
@@ -137,6 +223,10 @@
     familyOf: (id) => (id === 'demo' ? 'solana' : (PROVIDERS[id] || {}).family),
     available: (id) => id === 'demo' ? !!(NX.data.settings && NX.data.settings.demo_mode) || !document.body.classList.contains('app') : !!(PROVIDERS[id] && PROVIDERS[id].get()),
     installUrl: (id) => INSTALL[id],
+    deepLink: (id) => {
+      const fn = DEEP_LINKS[id];
+      return (fn && typeof window !== 'undefined') ? fn(window.location.href) : null;
+    },
     /** Connect a wallet and return a signer { address, family, provider, sign(message) } */
     async connect(id) {
       if (id === 'demo') {
@@ -146,7 +236,12 @@
       }
       const P = PROVIDERS[id];
       const p = P && P.get();
-      if (!p) { const e = new Error(`${NAMES[id] || id} isn’t installed in this browser`); e.install = INSTALL[id]; throw e; }
+      if (!p) {
+        const e = new Error(`${NAMES[id] || id} isn’t detected in this browser or device`);
+        e.install = INSTALL[id];
+        e.walletId = id;
+        throw e;
+      }
       if (P.family === 'evm') {
         const [address] = await p.request({ method: 'eth_requestAccounts' });
         return { address, family: 'evm', provider: NAMES[id], injected: p, sign: (msg) => p.request({ method: 'personal_sign', params: [toHex(msg), address] }) };
@@ -197,8 +292,19 @@
       if (!p) throw new Error(`Open the Solana wallet that owns ${NX.fmt.short(owner)} (Phantom, Solflare or Backpack)`);
       const w3 = await NX.wallet.loadWeb3();
       const tx = w3.Transaction.from(b64ToBytes(b64));
-      try { const out = await p.signAndSendTransaction(tx); return out.signature || out; }
-      catch (e) { throw new Error(rejected(e) ? 'You rejected the transaction in your wallet' : e.message); }
+      try {
+        if (typeof p.signAndSendTransaction === 'function') {
+          const out = await p.signAndSendTransaction(tx);
+          return out.signature || out;
+        }
+        if (typeof p.signTransaction === 'function') {
+          const signed = await p.signTransaction(tx);
+          return NX.b58(signed.signature || (signed.signatures && signed.signatures[0] && signed.signatures[0].signature) || signed.serialize().slice(1, 65));
+        }
+        throw new Error('Wallet does not support transaction signing');
+      } catch (e) {
+        throw new Error(rejected(e) ? 'You rejected the transaction in your wallet' : e.message);
+      }
     },
     /** Sign + send a base64 *versioned* Solana transaction (e.g. a Jupiter swap) */
     async sendSolanaVersioned(b64, owner) {
@@ -206,25 +312,49 @@
       if (!p) throw new Error(`Open the Solana wallet that owns ${NX.fmt.short(owner)}`);
       const w3 = await NX.wallet.loadWeb3();
       const tx = w3.VersionedTransaction.deserialize(b64ToBytes(b64));
-      try { const out = await p.signAndSendTransaction(tx); return out.signature || out; }
-      catch (e) { throw new Error(rejected(e) ? 'You rejected the transaction in your wallet' : e.message); }
+      try {
+        if (typeof p.signAndSendTransaction === 'function') {
+          const out = await p.signAndSendTransaction(tx);
+          return out.signature || out;
+        }
+        if (typeof p.signTransaction === 'function') {
+          const signed = await p.signTransaction(tx);
+          return NX.b58((signed.signatures && signed.signatures[0]) || signed.serialize().slice(1, 65));
+        }
+        throw new Error('Wallet does not support transaction signing');
+      } catch (e) {
+        throw new Error(rejected(e) ? 'You rejected the transaction in your wallet' : e.message);
+      }
     },
     /** Send an EVM transaction ({chainId, to, data?, value?}) from `from` via the connected EVM wallet */
     async sendEvmTx(call, from) {
-      const p = window.ethereum;
+      const p = getEvmWallet('evm') || window.ethereum;
       if (!p) throw new Error('Open your EVM wallet (MetaMask, Trust, Coinbase or Binance)');
       const [acct] = await p.request({ method: 'eth_requestAccounts' });
       if (acct.toLowerCase() !== from.toLowerCase()) throw new Error(`Switch your wallet to ${NX.fmt.short(from)}`);
-      try { await p.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: call.chainId }] }); }
-      catch (e) { throw new Error(rejected(e) ? 'Network switch rejected' : 'Add this network to your wallet first'); }
-      const txp = { from, to: call.to }; if (call.data) txp.data = call.data; if (call.value) txp.value = call.value;
+      if (call.chainId) {
+        const hexChainId = typeof call.chainId === 'number'
+          ? '0x' + call.chainId.toString(16)
+          : (String(call.chainId).startsWith('0x') ? call.chainId : '0x' + parseInt(call.chainId, 10).toString(16));
+        try {
+          const cur = await p.request({ method: 'eth_chainId' }).catch(() => null);
+          if (cur && cur.toLowerCase() !== hexChainId.toLowerCase()) {
+            await p.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: hexChainId }] });
+          }
+        } catch (e) {
+          if (rejected(e)) throw new Error('Network switch rejected');
+        }
+      }
+      const txp = { from, to: call.to };
+      if (call.data) txp.data = call.data;
+      if (call.value) txp.value = typeof call.value === 'number' ? '0x' + call.value.toString(16) : call.value;
       try { return await p.request({ method: 'eth_sendTransaction', params: [txp] }); }
       catch (e) { throw new Error(rejected(e) ? 'You rejected the transaction in your wallet' : e.message); }
     },
     /** Send TRX or a TRC-20 token via TronLink */
     async tronSend(coin, to, amount, owner) {
       const tw = window.tronWeb || (window.tronLink && window.tronLink.tronWeb);
-      if (!tw || tw.defaultAddress.base58 !== owner) throw new Error(`Open TronLink on ${NX.fmt.short(owner)}`);
+      if (!tw || (tw.defaultAddress && tw.defaultAddress.base58 !== owner)) throw new Error(`Open TronLink on ${NX.fmt.short(owner)}`);
       if (coin === 'TRX') { const tx = await tw.trx.sendTransaction(to, Math.round(amount * 1e6)); return tx.txid || (tx.transaction && tx.transaction.txID); }
       const c = await tw.contract().at(NX.data.tronUsdt || 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t');
       return c.transfer(to, Math.round(amount * 1e6)).send({ feeLimit: 60000000 });
@@ -232,15 +362,12 @@
     /** TRC-20 approve via TronLink */
     async tronApprove(req, owner) {
       const tw = window.tronWeb || (window.tronLink && window.tronLink.tronWeb);
-      if (!tw || tw.defaultAddress.base58 !== owner) throw new Error(`Open TronLink on ${NX.fmt.short(owner)}`);
-      const c = await tw.contract().at(req.contract);
-      return c.approve(req.spender, req.amount).send({ feeLimit: 60000000 });
-    },
-    /** TRC-20 approve via TronLink */
-    async tronApprove(req, owner) {
-      const tw = window.tronWeb || (window.tronLink && window.tronLink.tronWeb);
-      if (!tw || tw.defaultAddress.base58 !== owner) throw new Error(`Open TronLink on ${NX.fmt.short(owner)}`);
-      const c = await tw.contract().at(req.contract);
+      if (!tw || (tw.defaultAddress && tw.defaultAddress.base58 !== owner)) {
+        if (window.tronLink && window.tronLink.request) await window.tronLink.request({ method: 'tron_requestAccounts' });
+      }
+      const activeTw = window.tronWeb || (window.tronLink && window.tronLink.tronWeb);
+      if (!activeTw || !activeTw.defaultAddress || !activeTw.defaultAddress.base58) throw new Error(`Open TronLink on ${NX.fmt.short(owner)}`);
+      const c = await activeTw.contract().at(req.contract);
       return c.approve(req.spender, req.amount).send({ feeLimit: 60000000 });
     },
     /**

@@ -145,7 +145,7 @@
   function walletList() {
     return WALLETS.filter((w) => w.id !== 'demo' || NX.wallet.available('demo')).map((w) => {
       const avail = NX.wallet.available(w.id);
-      return `<button type="button" class="wallet-opt" data-w="${w.id}">${NX.walletIcon(w.id, w.color, w.name, 'wallet-opt__logo')}<span class="grow"><span class="wallet-opt__name">${w.name}</span><br><span class="caption">${avail ? (w.id === 'demo' ? w.ch : 'Detected · ' + w.ch) : 'Not installed — tap to get it'}</span></span>${avail ? I('chevron-right', 'ic--sm') : I('external', 'ic--sm')}</button>`;
+      return `<button type="button" class="wallet-opt" data-w="${w.id}">${NX.walletIcon(w.id, w.color, w.name, 'wallet-opt__logo')}<span class="grow"><span class="wallet-opt__name">${w.name}</span><br><span class="caption">${avail ? (w.id === 'demo' ? w.ch : 'Detected · ' + w.ch) : w.ch}</span></span>${avail ? I('chevron-right', 'ic--sm') : I('chevron-right', 'ic--sm')}</button>`;
     }).join('');
   }
   /**
@@ -156,25 +156,56 @@
     const d = document.createElement('dialog');
     d.className = 'modal';
     d.innerHTML = `<div class="modal__head"><h2 class="modal__title">${title}</h2><button class="icon-btn icon-btn--sm" data-x aria-label="Close">${I('x')}</button></div>
-      <div class="modal__body" data-body><div class="stack">${walletList()}</div><p class="seed-note">${I('shield')} You’ll only sign a message — no transaction, no fees. ${(window.NX && NX.brandName) ? NX.brandName() : 'NECTRA'} will never ask for your seed phrase.</p></div>`;
+      <div class="modal__body" data-body><div class="stack">${walletList()}</div><p class="seed-note">${I('shield')} You’ll only sign a message — no transaction, no fees. ${(window.NX && NX.brandName) ? NX.brandName() : 'Ascendex'} will never ask for your seed phrase.</p></div>`;
     document.body.appendChild(d);
     let done = false;
     const finish = (v) => { if (done) return; done = true; NX.modal.close(d); setTimeout(() => d.remove(), 260); resolve(v); };
     d.addEventListener('cancel', (e) => { e.preventDefault(); finish(null); });
     d.addEventListener('click', async (e) => {
       if (e.target.closest('[data-x]') || e.target === d) return finish(null);
-      const b = e.target.closest('[data-w]'); if (!b) return;
-      const w = WALLETS.find((x) => x.id === b.dataset.w);
-      if (!NX.wallet.available(w.id)) { window.open(NX.wallet.installUrl(w.id) || '#', '_blank', 'noopener'); return; }
+      if (e.target.closest('[data-back-wallets]')) {
+        const body = d.querySelector('[data-body]');
+        body.innerHTML = `<div class="stack">${walletList()}</div><p class="seed-note">${I('shield')} You’ll only sign a message — no transaction, no fees. ${(window.NX && NX.brandName) ? NX.brandName() : 'Ascendex'} will never ask for your seed phrase.</p>`;
+        NX.hydrateIcons(body);
+        return;
+      }
+      const retryBtn = e.target.closest('[data-retry-wallet]');
+      const walletId = retryBtn ? retryBtn.dataset.retryWallet : null;
+      const b = e.target.closest('[data-w]');
+      if (!b && !walletId) return;
+      const targetId = walletId || b.dataset.w;
+      const w = WALLETS.find((x) => x.id === targetId);
+      if (!w) return;
+
       const body = d.querySelector('[data-body]');
-      body.innerHTML = `<div class="connecting"><div class="orbit"><span class="wallet-opt__logo" style="background:${w.color};width:48px;height:48px;border-radius:14px;font-size:20px">${w.name[0]}</span></div><div><div class="strong">Waiting for ${w.name}…</div><div class="caption">Approve the connection, then sign the message</div></div></div>`;
+      body.innerHTML = `<div class="connecting"><div class="orbit"><span class="wallet-opt__logo" style="background:${w.color};width:48px;height:48px;border-radius:14px;font-size:20px">${w.name[0]}</span></div><div><div class="strong">Connecting to ${w.name}…</div><div class="caption">Approve connection request in your wallet</div></div></div>`;
+
       try {
         const proof = await NX.wallet.prove(w.id, purpose, extra);
         body.innerHTML = `<div class="connecting"><div class="success-mark">${I('check')}</div><div class="strong">Signature created</div><div class="caption">${w.name} · <span class="mono">${F.short(proof.address)}</span></div><pre class="sign-msg">${esc(proof.message)}</pre></div>`;
         await wait(700);
         finish(proof);
       } catch (err) {
-        body.innerHTML = `<div class="note note--danger">${I('alert')}<span>${esc(err.message || 'Wallet request failed')}</span></div><div class="stack">${walletList()}</div>`;
+        const isNotInstalled = /isn’t detected|isn’t installed|not detected|not installed/i.test(err.message || '');
+        const installUrl = NX.wallet.installUrl(w.id);
+        const deepLink = NX.wallet.deepLink(w.id);
+        const isMobile = window.NX && NX.pwa && NX.pwa.isMobile ? NX.pwa.isMobile() : /Android|iPhone|iPad/i.test(navigator.userAgent);
+
+        if (isNotInstalled) {
+          body.innerHTML = `
+            <div class="note note--warn">${I('alert')}<span><strong>${w.name} not detected</strong> in this browser or device.</span></div>
+            <p class="small muted mt-8">Please open or install ${w.name} to connect.</p>
+            <div class="row" style="gap:8px;margin:16px 0 20px 0;flex-wrap:wrap">
+              ${isMobile && deepLink ? `<a class="btn btn--primary btn--sm" href="${deepLink}" target="_blank" rel="noopener">Open in ${w.name} App</a>` : ''}
+              ${installUrl ? `<a class="btn ${isMobile && deepLink ? 'btn--ghost' : 'btn--primary'} btn--sm" href="${installUrl}" target="_blank" rel="noopener">Get ${w.name}</a>` : ''}
+              <button class="btn btn--ghost btn--sm" data-retry-wallet="${w.id}">Try Again</button>
+              <button class="btn btn--ghost btn--sm" data-back-wallets>Back to list</button>
+            </div>
+            <div class="stack">${walletList()}</div>
+          `;
+        } else {
+          body.innerHTML = `<div class="note note--danger">${I('alert')}<span>${esc(err.message || 'Wallet request failed')}</span></div><div class="stack">${walletList()}</div>`;
+        }
         NX.hydrateIcons(body);
       }
     });
@@ -325,7 +356,6 @@
     };
     const otp = NX.otp($('#invite-otp'), { length: 8, minLength: 6, alnum: true, onChange: (v) => { next.disabled = v.length < 6; if (v.length < 8) status.innerHTML = ''; }, onComplete: check, onEnter: check });
     next.addEventListener('click', () => check(otp.value()));
-    $('#invite-demo').addEventListener('click', () => otp.fill('NECTRA26'));
     const preCode = new URLSearchParams(location.search).get('code'); if (preCode) setTimeout(() => otp.fill(preCode), 300);
 
     const pw = $('#reg-pw'), meter = $$('#pw-meter span'), pwHint = $('#pw-hint');
@@ -416,7 +446,6 @@
       if (!emailOk(em.value)) { em.classList.add('is-invalid'); return; }
       const r = await NX.act($('#request-form .btn--primary'), () => NX.post('/api/waitlist', { email: em.value, referral: $('#req-ref').value }));
       if (!r) return;
-      $('#wl-pos').textContent = '#' + r.position.toLocaleString();
       showStep('step-request-done');
     });
     const route = async () => {
@@ -642,9 +671,27 @@
     const chat = NX.mountChat($('#chat-main'));
     let data = await NX.get('/api/bots');
     const paper = $('#paper-toggle');
-    paper.checked = true;
-    paper.disabled = true;
-    paper.closest('label').dataset.tip = data.liveEnabled ? 'New bots start in paper mode. Use “Go live” on a bot to trade real funds from its own wallet.' : 'Live trading is not enabled on this platform yet — all bots run in paper mode.';
+    if (paper) {
+      paper.checked = !!data.paperMode;
+      paper.disabled = false;
+      paper.closest('label').dataset.tip = 'Toggle between paper trading (simulated funds) and live trading mode.';
+      paper.addEventListener('change', async () => {
+        const desired = paper.checked;
+        try {
+          const res = await NX.patch('/api/me/paper', { paper: desired });
+          paper.checked = !!res.paperMode;
+          if (D.user) D.user.paperMode = !!res.paperMode;
+          NX.toast(res.paperMode ? 'Paper trading mode enabled' : 'Paper trading mode disabled', {
+            type: 'info',
+            msg: res.paperMode ? 'Bots run using simulated paper funds' : 'Paper trading turned off'
+          });
+          refresh();
+        } catch (err) {
+          paper.checked = !desired;
+          NX.toast(err.message || 'Could not change paper trading mode', { type: 'danger' });
+        }
+      });
+    }
     const askCode = async (title, body) => {
       if (!D.user.twoFA) { NX.toast('Enable 2FA first', { type: 'warn', msg: 'Settings → Security → authenticator app' }); return null; }
       window._code2fa = '';

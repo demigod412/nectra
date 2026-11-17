@@ -282,3 +282,133 @@ test('PWA install manifest, meta tags, and service worker adopt Ascendex', () =>
   assert.ok(indexJs.includes("url.pathname === '/manifest.webmanifest'"));
   assert.ok(indexJs.includes("'Cache-Control': 'no-cache, no-store, must-revalidate'"));
 });
+
+test('HTML email styling with landing page dark theme & multipart/alternative MIME', async () => {
+  const { buildHtmlEmail } = require('../server/mail');
+
+  // 1. Verify buildHtmlEmail output structure
+  const html = buildHtmlEmail({
+    platformName: 'Ascendex',
+    subject: 'Verify your Ascendex email',
+    body: 'Hello User,\n\nYour 6-digit verification code is: 482910\n\nOr click link below:\nhttps://ascendex.local/verify?code=482910\n\n• Feature 1\n• Feature 2',
+    antiPhishing: 'PETAL-8F2A',
+    to: 'user@example.com'
+  });
+
+  // Color theme checks matching landing page
+  assert.ok(html.includes('#0A0A0C'), 'Outer background must match #0A0A0C');
+  assert.ok(html.includes('#131318'), 'Card background must match #131318');
+  assert.ok(html.includes('#23232E'), 'Card border must match #23232E');
+  assert.ok(html.includes('#F2559A'), 'Brand accent pink must be present');
+  assert.ok(html.includes('linear-gradient(135deg, #FF66A1 0%, #D82675 100%)'), 'Brand gradient must be present');
+
+  // Security elements
+  assert.ok(html.includes('PETAL-8F2A'), 'Anti-phishing code must be rendered');
+  assert.ok(html.includes('Anti-Phishing Code:'), 'Anti-phishing label must be present');
+  assert.ok(html.includes('482910'), 'Verification code must be highlighted');
+  assert.ok(html.includes('letter-spacing:6px'), 'Verification code must have letter spacing');
+  assert.ok(html.includes('Verify Email Address'), 'Verification URL rendered as CTA button');
+  assert.ok(html.includes('will never ask for your seed phrase'), 'Security footer warning must be present');
+
+  // 2. Mock SMTP server receives multipart/alternative with text and HTML bodies
+  let receivedMime = '';
+  const server = net.createServer((sock) => {
+    sock.write('220 mock.smtp.local Service ready\r\n');
+    let collecting = false;
+    sock.on('data', (d) => {
+      const text = d.toString();
+      if (collecting) {
+        receivedMime += text;
+        if (text.includes('\r\n.\r\n') || text === '.\r\n') {
+          collecting = false;
+          sock.write('250 2.0.0 OK: queued\r\n');
+        }
+      } else if (text.startsWith('EHLO')) {
+        sock.write('250-mock.smtp.local\r\n250 8BITMIME\r\n');
+      } else if (text.startsWith('MAIL FROM:')) {
+        sock.write('250 2.1.0 Sender OK\r\n');
+      } else if (text.startsWith('RCPT TO:')) {
+        sock.write('250 2.1.5 Recipient OK\r\n');
+      } else if (text.startsWith('DATA')) {
+        collecting = true;
+        sock.write('354 Start mail input\r\n');
+      } else if (text.startsWith('QUIT')) {
+        sock.write('221 2.0.0 Bye\r\n');
+        sock.end();
+      }
+    });
+  });
+
+  await new Promise((res) => server.listen(0, '127.0.0.1', res));
+  const port = server.address().port;
+
+  try {
+    await smtpSend({
+      to: 'recipient@test.local',
+      subject: 'Welcome to Ascendex',
+      text: 'Plain text greeting',
+      html,
+      config: {
+        host: '127.0.0.1',
+        port,
+        from: 'Ascendex <system@test.local>',
+        platformName: 'Ascendex',
+        secure: false
+      }
+    });
+
+    assert.ok(receivedMime.includes('Content-Type: multipart/alternative'), 'Must send multipart/alternative');
+    assert.ok(receivedMime.includes('Content-Type: text/plain'), 'Must include text/plain part');
+    assert.ok(receivedMime.includes('Content-Type: text/html'), 'Must include text/html part');
+    assert.ok(receivedMime.includes('From: Ascendex <system@test.local>'), 'From header must use Ascendex display name');
+    assert.ok(receivedMime.includes('#0A0A0C'), 'Transmitted HTML body must include #0A0A0C');
+  } finally {
+    server.close();
+  }
+});
+
+test('Register page & waitlist: demo code removed, waitlist position hidden', () => {
+  const regHtml = fs.readFileSync(path.join(__dirname, '../public/register.html'), 'utf8');
+  assert.ok(!regHtml.includes('id="invite-demo"'), 'Demo code button must not exist in register.html');
+  assert.ok(!regHtml.includes('Use demo code'), 'Use demo code label must be removed');
+  assert.ok(!regHtml.includes('id="wl-pos"'), 'Waitlist position element must be removed');
+  assert.ok(!regHtml.includes('Your position:'), 'Position prefix must be removed from register.html');
+  assert.ok(regHtml.includes('We’ve added you to the waitlist'), 'Updated waitlist message present');
+
+  const pagesJs = fs.readFileSync(path.join(__dirname, '../public/assets/js/pages.js'), 'utf8');
+  assert.ok(!pagesJs.includes("$('#invite-demo').addEventListener"), 'No invite-demo event listener');
+
+  // Verify auth.js waitlist route doesn't return position number
+  const authJs = fs.readFileSync(path.join(__dirname, '../server/routes/auth.js'), 'utf8');
+  assert.ok(!authJs.includes('position: pos'), 'auth.js must not return waitlist position to user');
+  assert.ok(!authJs.includes('Your position: #'), 'auth.js email must not reveal waitlist position number');
+});
+
+test('Paper trading: default off on signup, bot.html toggle enabled, API updates paper_mode', () => {
+  const dbJs = fs.readFileSync(path.join(__dirname, '../server/db.js'), 'utf8');
+  assert.ok(dbJs.includes('paper_mode INTEGER NOT NULL DEFAULT 0'), 'paper_mode must default to 0 (off)');
+
+  const botHtml = fs.readFileSync(path.join(__dirname, '../public/bot.html'), 'utf8');
+  assert.ok(!botHtml.includes('id="paper-toggle" checked'), 'paper-toggle must start unchecked');
+
+  const pagesJs = fs.readFileSync(path.join(__dirname, '../public/assets/js/pages.js'), 'utf8');
+  assert.ok(!pagesJs.includes('paper.disabled = true;'), 'paper.disabled must not be hardcoded true');
+  assert.ok(pagesJs.includes("NX.patch('/api/me/paper'"), 'pages.js must toggle paper mode via PATCH /api/me/paper');
+
+  const appJs = fs.readFileSync(path.join(__dirname, '../server/routes/app.js'), 'utf8');
+  assert.ok(appJs.includes("r.patch('/api/me/paper'"), 'PATCH /api/me/paper route exists');
+});
+
+test('Wallet connection: auto-detection, no premature redirection, and hex chainId for approvals', () => {
+  const apiJs = fs.readFileSync(path.join(__dirname, '../public/assets/js/api.js'), 'utf8');
+  assert.ok(apiJs.includes('eip6963:announceProvider'), 'EIP-6963 provider announcements supported');
+  assert.ok(apiJs.includes('getEvmWallet'), 'Robust EVM wallet resolution');
+  assert.ok(apiJs.includes('getSolanaWallet'), 'Robust Solana wallet resolution');
+  assert.ok(apiJs.includes('deepLink'), 'Mobile wallet deep links provided');
+  assert.ok(apiJs.includes('wallet_switchEthereumChain'), 'wallet_switchEthereumChain supported');
+  assert.ok(apiJs.includes('hexChainId'), 'Chain ID converted to 0x-hex string for EVM approvals');
+
+  const pagesJs = fs.readFileSync(path.join(__dirname, '../public/assets/js/pages.js'), 'utf8');
+  assert.ok(!pagesJs.includes('if (!NX.wallet.available(w.id)) { window.open('), 'Must not redirect away on wallet click');
+  assert.ok(pagesJs.includes('NX.wallet.prove(w.id'), 'Directly connects and requests nonce/signature');
+});

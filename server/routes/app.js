@@ -267,10 +267,9 @@ module.exports = (r) => {
   r.post('/api/bots/pause-all', (c) => { const u = S.requireUser(c); const n = E.pauseAll(u.id, 'Paused by kill-switch'); S.audit(u.id, 'bot.pause_all', u.id, { n }, c.req); return { paused: n }; });
   r.patch('/api/me/paper', (c) => {
     const u = S.requireUser(c);
-    if (!c.body.paper && !getSettings().live_trading_enabled) fail(403, 'Live trading is not enabled on this platform yet');
-    if (!c.body.paper && !u.totp_enabled) fail(403, 'Enable 2FA before switching to live trading');
-    q.run('UPDATE users SET paper_mode = ? WHERE id = ?', c.body.paper ? 1 : 0, u.id);
-    return { paperMode: !!c.body.paper };
+    const paper = Boolean(c.body.paper);
+    q.run('UPDATE users SET paper_mode = ? WHERE id = ?', paper ? 1 : 0, u.id);
+    return { paperMode: paper };
   });
   r.post('/api/copilot/parse', async (c) => {
     const u = S.requireUser(c);
