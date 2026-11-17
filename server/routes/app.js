@@ -41,6 +41,32 @@ const nativeSym = (family) => ({ evm: 'ETH', tron: 'TRX', solana: 'SOL', btc: 'B
 const walletRow = (w) => {
   const sym = nativeSym(w.family);
   const px = market.price(sym) || 0;
+  const lchk = J(w.last_check, null);
+  let tokenUsd = 0;
+  const tokens = [];
+  if (lchk && lchk.detail) {
+    if (w.family === 'evm') {
+      for (const [net, r] of Object.entries(lchk.detail)) {
+        if (!r || r.error) continue;
+        if (typeof r.USDC === 'number' && r.USDC > 1e-6) {
+          tokenUsd += r.USDC;
+          tokens.push({ token: 'USDC', amount: r.USDC, network: net, usd: r.USDC });
+        }
+        if (typeof r.USDT === 'number' && r.USDT > 1e-6) {
+          tokenUsd += r.USDT;
+          tokens.push({ token: 'USDT', amount: r.USDT, network: net, usd: r.USDT });
+        }
+      }
+    } else if (w.family === 'tron') {
+      if (typeof lchk.detail.USDT === 'number' && lchk.detail.USDT > 1e-6) {
+        tokenUsd += lchk.detail.USDT;
+        tokens.push({ token: 'USDT', amount: lchk.detail.USDT, network: 'Tron', usd: lchk.detail.USDT });
+      }
+    }
+  }
+  const nativeBal = w.balance || 0;
+  const nativeUsd = nativeBal * px;
+  const totalUsd = nativeUsd + tokenUsd;
   return {
     id: w.id,
     name: w.name,
@@ -55,15 +81,18 @@ const walletRow = (w) => {
     sol: w.balance,
     balance: w.balance,
     symbol: sym,
-    usd: (w.balance || 0) * px,
+    nativeUsd,
+    tokenUsd,
+    usd: totalUsd,
+    tokens,
     balanceAt: w.balance_at,
-    lastCheck: J(w.last_check, null)
+    lastCheck: lchk
   };
 };
 
-async function refreshWalletBalance(wallet) {
+async function refreshWalletBalance(wallet, initialNative) {
   if (!wallet || wallet.source === 'demo') return wallet ? wallet.balance || 0 : 0;
-  let bal = 0;
+  let bal = typeof initialNative === 'number' && initialNative > 0 ? initialNative : 0;
   let detail = null;
   try {
     if (wallet.family === 'solana') {
@@ -71,22 +100,27 @@ async function refreshWalletBalance(wallet) {
     } else if (wallet.family === 'evm') {
       detail = await require('../chains/evm').balances(wallet.address);
       if (detail) {
+        let evmNative = 0;
         for (const net of Object.values(detail)) {
-          if (net && typeof net.native === 'number') bal += net.native;
+          if (net && typeof net.native === 'number') evmNative += net.native;
         }
+        if (evmNative > 0 || !bal) bal = evmNative;
       }
     } else if (wallet.family === 'tron') {
       detail = await require('../chains/tron').balances(wallet.address);
-      if (detail) bal = detail.TRX || 0;
+      if (detail && typeof detail.TRX === 'number') bal = detail.TRX;
     } else if (wallet.family === 'btc' || wallet.family === 'ltc') {
       detail = await require('../chains/utxo').addressBalance(wallet.family.toUpperCase(), wallet.address);
       if (detail) bal = (detail.confirmed || 0) + (detail.pending || 0);
     }
     q.run('UPDATE wallets SET balance = ?, balance_at = ?, last_check = ? WHERE id = ?',
-      bal, now(), detail ? JSON.stringify({ at: now(), detail }) : null, wallet.id);
+      bal, now(), detail ? JSON.stringify({ at: now(), detail }) : (wallet.last_check || null), wallet.id);
     return bal;
   } catch (err) {
-    return wallet.balance || 0;
+    if (bal > 0) {
+      q.run('UPDATE wallets SET balance = ?, balance_at = ? WHERE id = ?', bal, now(), wallet.id);
+    }
+    return bal || wallet.balance || 0;
   }
 }
 function botsFor(uid) { return q.all('SELECT * FROM bots WHERE user_id = ? ORDER BY created_at', uid).map((b) => E.botPayload(b)); }
@@ -232,28 +266,57 @@ module.exports = (r) => {
     const u = S.requireUser(c);
     const risk = J(u.risk);
     const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0);
-    const value = E.portfolioValue(u.id);
+    const isPaper = !!u.paper_mode;
+    const ws = q.all("SELECT * FROM wallets WHERE user_id = ? AND verified = 1", u.id).map(walletRow);
+    const totalWalletUsd = ws.reduce((a, w) => a + (w.usd || 0), 0);
+    const acctBal = E.accountBalance(u.id);
+    const liveBotsVal = q.all("SELECT pair, cash, position FROM bots WHERE user_id = ? AND mode = 'live'", u.id)
+      .reduce((a, b) => a + b.cash + b.position * (market.price(b.pair.split('/')[0]) || 0), 0);
+    const value = isPaper ? E.portfolioValue(u.id) : (totalWalletUsd + acctBal + liveBotsVal);
     const open = q.val('SELECT value FROM equity WHERE user_id = ? AND ts >= ? ORDER BY ts LIMIT 1', u.id, dayStart.getTime()) || value;
     const bots = botsFor(u.id);
     const closed = q.get("SELECT COUNT(*) n, SUM(pnl > 0) w FROM trades WHERE user_id = ? AND side = 'sell' AND created_at > ?", u.id, now() - 30 * DAY);
     const exposure = q.all('SELECT pair, position FROM bots WHERE user_id = ?', u.id).reduce((a, b) => a + b.position * market.price(b.pair.split('/')[0]), 0);
-    const holdings = q.all('SELECT token, amount FROM holdings WHERE user_id = ? AND amount > 0', u.id);
     const allocTok = {};
-    holdings.forEach((h) => (allocTok[h.token] = (allocTok[h.token] || 0) + h.amount * market.price(h.token)));
-    q.all('SELECT pair, cash, position FROM bots WHERE user_id = ?', u.id).forEach((b) => { const t = b.pair.split('/')[0]; allocTok[t] = (allocTok[t] || 0) + b.position * market.price(t); allocTok.USDC = (allocTok.USDC || 0) + b.cash; });
+    if (isPaper) {
+      const holdings = q.all('SELECT token, amount FROM holdings WHERE user_id = ? AND amount > 0', u.id);
+      holdings.forEach((h) => (allocTok[h.token] = (allocTok[h.token] || 0) + h.amount * market.price(h.token)));
+      q.all("SELECT pair, cash, position FROM bots WHERE user_id = ? AND mode = 'paper'", u.id).forEach((b) => {
+        const t = b.pair.split('/')[0]; allocTok[t] = (allocTok[t] || 0) + b.position * market.price(t); allocTok.USDC = (allocTok.USDC || 0) + b.cash;
+      });
+    } else {
+      ws.forEach((w) => {
+        if (w.usd > 0) allocTok[w.symbol] = (allocTok[w.symbol] || 0) + (w.nativeUsd || 0);
+        (w.tokens || []).forEach((tk) => { allocTok[tk.token] = (allocTok[tk.token] || 0) + (tk.usd || 0); });
+      });
+      if (acctBal > 0) allocTok.USDC = (allocTok.USDC || 0) + acctBal;
+      q.all("SELECT pair, cash, position FROM bots WHERE user_id = ? AND mode = 'live'", u.id).forEach((b) => {
+        const t = b.pair.split('/')[0]; allocTok[t] = (allocTok[t] || 0) + b.position * market.price(t); allocTok.USDC = (allocTok.USDC || 0) + b.cash;
+      });
+    }
     const colors = Object.fromEntries(market.tokens().map((t) => [t.sym, t.color]));
-    const main = q.get("SELECT * FROM wallets WHERE user_id = ? AND kind = 'main'", u.id);
+    const main = ws.find((w) => w.kind === 'main') || (ws.length ? ws[0] : null);
     return {
       value, todayPnl: value - open, change24: q.val('SELECT value FROM equity WHERE user_id = ? AND ts <= ? ORDER BY ts DESC LIMIT 1', u.id, now() - DAY) || value,
-      kpis: { activeBots: bots.filter((b) => b.status === 'running').length, totalBots: bots.length, pausedByRisk: bots.filter((b) => b.status === 'paused' && b.paused_reason).length, winRate: closed.n ? (closed.w / closed.n) * 100 : 0, closed: closed.n, walletSol: q.val('SELECT COALESCE(SUM(balance),0) FROM wallets WHERE user_id = ?', u.id), walletCount: q.val('SELECT COUNT(*) FROM wallets WHERE user_id = ?', u.id), mainSol: main ? main.balance : 0 },
+      kpis: {
+        activeBots: bots.filter((b) => b.status === 'running').length,
+        totalBots: bots.length,
+        pausedByRisk: bots.filter((b) => b.status === 'paused' && b.paused_reason).length,
+        winRate: closed.n ? (closed.w / closed.n) * 100 : 0,
+        closed: closed.n,
+        walletSol: main ? main.balance : 0,
+        mainSymbol: main ? main.symbol : 'ETH',
+        walletCount: ws.length,
+        mainSol: main ? main.balance : 0
+      },
       bots, insights: q.all('SELECT * FROM insights WHERE user_id = ? OR user_id IS NULL ORDER BY created_at DESC LIMIT 5', u.id),
       trades: q.all('SELECT * FROM trades WHERE user_id = ? ORDER BY created_at DESC LIMIT 60', u.id),
       allocation: {
-        tokens: Object.entries(allocTok).filter(([, v]) => v > 0.5).sort((a, b) => b[1] - a[1]).map(([label, v]) => ({ label, value: v, color: colors[label] || '#888' })),
-        bots: bots.map((b, i) => ({ label: b.name, value: Math.max(b.value, 0.01), color: ['#F2559A', '#F27BB0', '#C58BFF', '#8B8B94', '#5BB6A6', '#E2A33A'][i % 6] })).concat([{ label: 'Idle (paper cash)', value: E.holdingsValue(u.id), color: '#5C5C66' }])
+        tokens: Object.entries(allocTok).filter(([, v]) => v > 0.01).sort((a, b) => b[1] - a[1]).map(([label, v]) => ({ label, value: v, color: colors[label] || '#888' })),
+        bots: bots.map((b, i) => ({ label: b.name, value: Math.max(b.value, 0.01), color: ['#F2559A', '#F27BB0', '#C58BFF', '#8B8B94', '#5BB6A6', '#E2A33A'][i % 6] })).concat(isPaper ? [{ label: 'Idle (paper cash)', value: E.holdingsValue(u.id), color: '#5C5C66' }] : [{ label: 'Account balance', value: acctBal, color: '#5C5C66' }])
       },
       risk: { exposure, limit: risk.maxPosition || 12500, maxDailyLoss: risk.maxDailyLoss || 5, dailyUsed: open ? Math.max(0, -(value - open) / open * 100) : 0 },
-      onboarding: onboarding(u), accountBalance: E.accountBalance(u.id)
+      onboarding: onboarding(u), accountBalance: acctBal, paperMode: isPaper, liveEnabled: getSettings().live_trading_enabled
     };
   });
   r.get('/api/portfolio/series', (c) => {
@@ -262,7 +325,12 @@ module.exports = (r) => {
     const rows = q.all('SELECT ts, value FROM equity WHERE user_id = ? AND ts >= ? ORDER BY ts', u.id, now() - span);
     const step = Math.max(1, Math.floor(rows.length / 90));
     const pts = rows.filter((_, i) => i % step === 0).map((r2) => ({ t: r2.ts, v: r2.value }));
-    pts.push({ t: now(), v: E.portfolioValue(u.id) });
+    const curVal = !u.paper_mode ? (
+      q.all("SELECT * FROM wallets WHERE user_id = ? AND verified = 1", u.id).map(walletRow).reduce((a, w) => a + (w.usd || 0), 0) +
+      E.accountBalance(u.id) +
+      q.all("SELECT pair, cash, position FROM bots WHERE user_id = ? AND mode = 'live'", u.id).reduce((a, b) => a + b.cash + b.position * (market.price(b.pair.split('/')[0]) || 0), 0)
+    ) : E.portfolioValue(u.id);
+    pts.push({ t: now(), v: curVal });
     return { points: pts };
   });
 
@@ -353,16 +421,39 @@ module.exports = (r) => {
     if (running >= botCap) fail(402, `You’re at your plan’s limit of ${botCap} bots. Upgrade on the Plans page or stop a bot.`);
     const budget = num(c.body.budget || st.budget, 1, 1e7, 'Budget');
     if (perks.maxBudget && budget > perks.maxBudget) fail(402, `Your plan caps bot budget at $${perks.maxBudget.toLocaleString()}. Upgrade on the Plans page to raise it.`);
-    const usdc = q.val("SELECT amount FROM holdings WHERE user_id = ? AND token = 'USDC'", u.id) || 0;
-    if (usdc < budget) fail(400, `Not enough paper USDC: need $${budget.toFixed(2)}, have $${usdc.toFixed(2)}. Swap or stop a bot first.`);
-    const id = tx(() => {
-      E.addHolding(u.id, 'USDC', -budget);
-      q.run("UPDATE strategies SET status = 'deployed' WHERE id = ?", d.id);
-      return q.run('INSERT INTO bots(user_id, name, strategy, pair, config, state, mode, status, budget, cash, created_at, updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',
-        u.id, st.name, st.type, st.pair, JSON.stringify(st.config), '{}', 'paper', 'running', budget, budget, now(), now()).id;
-    });
-    insight(u.id, 'sparkles', `<b>${st.name}</b> deployed in paper mode with a $${budget.toFixed(0)} budget.`);
-    S.audit(u.id, 'bot.deploy', id, { type: st.type }, c.req);
+    const isLive = c.body.mode === 'live' || (!u.paper_mode && c.body.mode !== 'paper');
+    let id;
+    if (isLive) {
+      const s = getSettings();
+      if (!s.live_trading_enabled) fail(403, 'Live trading is not enabled on this platform yet');
+      if (u.totp_enabled && c.body.code && !S.verifyTotp(u.totp_secret, c.body.code)) {
+        fail(400, 'Incorrect 2FA code');
+      }
+      id = tx(() => {
+        q.run("UPDATE strategies SET status = 'deployed' WHERE id = ?", d.id);
+        const botId = q.run('INSERT INTO bots(user_id, name, strategy, pair, config, state, mode, status, budget, cash, created_at, updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',
+          u.id, st.name, st.type, st.pair, JSON.stringify(st.config), '{}', 'live', 'running', budget, budget, now(), now()).id;
+        try {
+          const nw = require('../chains/solana').newBotWallet();
+          q.run('INSERT INTO bot_wallets(bot_id, address, secret, created_at) VALUES(?,?,?,?)', botId, nw.address, nw.secret, now());
+          q.run('UPDATE bots SET live_address = ? WHERE id = ?', nw.address, botId);
+        } catch (_) {}
+        return botId;
+      });
+      insight(u.id, 'sparkles', `<b>${st.name}</b> deployed in LIVE mode with a $${budget.toFixed(0)} budget.`);
+      S.audit(u.id, 'bot.deploy_live', id, { type: st.type, budget }, c.req);
+    } else {
+      const usdc = q.val("SELECT amount FROM holdings WHERE user_id = ? AND token = 'USDC'", u.id) || 0;
+      if (usdc < budget) fail(400, `Not enough paper USDC: need $${budget.toFixed(2)}, have $${usdc.toFixed(2)}. Swap or stop a bot first.`);
+      id = tx(() => {
+        E.addHolding(u.id, 'USDC', -budget);
+        q.run("UPDATE strategies SET status = 'deployed' WHERE id = ?", d.id);
+        return q.run('INSERT INTO bots(user_id, name, strategy, pair, config, state, mode, status, budget, cash, created_at, updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',
+          u.id, st.name, st.type, st.pair, JSON.stringify(st.config), '{}', 'paper', 'running', budget, budget, now(), now()).id;
+      });
+      insight(u.id, 'sparkles', `<b>${st.name}</b> deployed in paper mode with a $${budget.toFixed(0)} budget.`);
+      S.audit(u.id, 'bot.deploy', id, { type: st.type }, c.req);
+    }
     return { bot: E.botPayload(q.get('SELECT * FROM bots WHERE id = ?', id)) };
   });
   r.post('/api/backtest', (c) => {
@@ -443,15 +534,21 @@ module.exports = (r) => {
   /* ---------------- wallets ---------------- */
   r.get('/api/wallets', (c) => {
     const u = S.requireUser(c);
-    const ws = q.all("SELECT * FROM wallets WHERE user_id = ? ORDER BY kind = 'main' DESC, id", u.id).map(walletRow);
-    const sol = ws.filter((w) => w.family === 'solana').reduce((a, w) => a + (w.balance || 0), 0);
-    const eth = ws.filter((w) => w.family === 'evm').reduce((a, w) => a + (w.balance || 0), 0);
-    const totalUsd = ws.reduce((a, w) => a + (w.usd || 0), 0);
+    let ws = q.all("SELECT * FROM wallets WHERE user_id = ? ORDER BY kind = 'main' DESC, id", u.id);
+    if (ws.length && !ws.some((w) => w.kind === 'main')) {
+      const firstVerified = ws.find((w) => w.verified && w.source !== 'watch') || ws[0];
+      q.run("UPDATE wallets SET kind = 'main' WHERE id = ?", firstVerified.id);
+      ws = q.all("SELECT * FROM wallets WHERE user_id = ? ORDER BY kind = 'main' DESC, id", u.id);
+    }
+    const rows = ws.map(walletRow);
+    const sol = rows.filter((w) => w.family === 'solana').reduce((a, w) => a + (w.balance || 0), 0);
+    const eth = rows.filter((w) => w.family === 'evm').reduce((a, w) => a + (w.balance || 0), 0);
+    const totalUsd = rows.reduce((a, w) => a + (w.usd || 0), 0);
     return {
-      main: ws.find((w) => w.kind === 'main') || null,
-      wallets: ws.filter((w) => w.kind !== 'main'),
+      main: rows.find((w) => w.kind === 'main') || (rows.length ? rows[0] : null),
+      wallets: rows.filter((w) => w.kind !== 'main'),
       folders: q.all('SELECT name FROM folders WHERE user_id = ? ORDER BY id', u.id).map((f) => f.name),
-      totals: { sol, eth, usd: totalUsd, count: ws.length },
+      totals: { sol, eth, usd: totalUsd, count: rows.length },
       solPrice: market.price('SOL'),
       ethPrice: market.price('ETH'),
       accountBalance: E.accountBalance(u.id),
@@ -490,11 +587,12 @@ module.exports = (r) => {
     q.run('INSERT OR IGNORE INTO folders(user_id, name) VALUES(?,?)', u.id, folder);
     const count = q.val("SELECT COUNT(*) FROM wallets WHERE user_id = ? AND kind = 'buyer'", u.id);
     const id = q.run('INSERT INTO wallets(user_id, name, address, chain, family, kind, source, provider, folder, verified, verified_at, created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',
-      u.id, str(c.body.name, 40) || (kind === 'main' ? 'Main wallet' : family === 'solana' ? 'Buyer ' + (count + 1) : chainName + ' wallet'), address, chainName, family, family === 'solana' ? kind : 'buyer', source, str(c.body.provider, 40) || null, folder, source === 'watch' ? 0 : 1, source === 'watch' ? null : now(), now()).id;
+      u.id, str(c.body.name, 40) || (kind === 'main' ? 'Main wallet' : family === 'solana' ? 'Buyer ' + (count + 1) : chainName + ' wallet'), address, chainName, family, kind, source, str(c.body.provider, 40) || null, folder, source === 'watch' ? 0 : 1, source === 'watch' ? null : now(), now()).id;
     require('../loans').creditScore(u.id);
     S.audit(u.id, 'wallet.add', id, { source, address }, c.req);
     const createdW = q.get('SELECT * FROM wallets WHERE id = ?', id);
-    await refreshWalletBalance(createdW);
+    const initBal = typeof c.body.initialBalance === 'number' ? c.body.initialBalance : null;
+    await refreshWalletBalance(createdW, initBal);
     return { wallet: walletRow(q.get('SELECT * FROM wallets WHERE id = ?', id)) };
   });
   r.patch('/api/wallets/:id', (c) => {

@@ -296,7 +296,20 @@
       return (v < 0 ? '-$' : '$') + Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: dec, maximumFractionDigits: dec });
     },
     num(v, d = 2) { return v.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }); },
-    sol(v) { return v.toFixed(4); },
+    sol(v) {
+      const n = Number(v) || 0;
+      if (n === 0) return '0.0000';
+      if (Math.abs(n) < 0.0001) return n.toFixed(8);
+      if (Math.abs(n) < 0.001) return n.toFixed(6);
+      return n.toFixed(4);
+    },
+    crypto(v, sym) {
+      const n = Number(v) || 0;
+      if (n === 0) return '0.0000';
+      if (Math.abs(n) < 0.0001) return n.toFixed(8);
+      if (Math.abs(n) < 0.001) return n.toFixed(6);
+      return n.toFixed(4);
+    },
     pct(v, d = 2) { return (v > 0 ? '+' : '') + v.toFixed(d) + '%'; },
     signed(v) { return (v >= 0 ? '+' : '-') + '$' + Math.abs(v).toFixed(2); },
     short(a, n = 4) { return a.length > n * 2 + 1 ? a.slice(0, n) + '…' + a.slice(-n) : a; },
@@ -375,6 +388,22 @@
     NX.modal.open(d);
     d.querySelector('[data-ok]').focus();
   });
+
+  NX.askCode = async (title, body) => {
+    if (NX.data && NX.data.user && !NX.data.user.twoFA) {
+      NX.toast('Enable 2FA first in Settings → Security', { type: 'warn' });
+      return null;
+    }
+    window._code2fa = '';
+    const ok = await NX.confirm({
+      title: title || 'Confirm with 2FA',
+      body: body || 'Enter your 6-digit authenticator code:',
+      confirm: 'Confirm',
+      extra: '<input class="input mono" id="code-2fa" inputmode="numeric" maxlength="6" placeholder="123456" aria-label="Authenticator code" autocomplete="one-time-code" autofocus style="text-align:center;font-size:20px;letter-spacing:4px;margin-top:12px;">'
+    });
+    return ok ? (window._code2fa || '').trim() : null;
+  };
+  document.addEventListener('input', (e) => { if (e.target.id === 'code-2fa') window._code2fa = e.target.value; });
 
   /** Terms & Risk Disclosure — prompt once per load until accepted (money actions are server-gated regardless). */
   NX.maybePromptTerms = () => {

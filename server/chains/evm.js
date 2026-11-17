@@ -12,14 +12,14 @@ const chains = require('viem/chains');
 const vault = require('../vault');
 
 const NETWORKS = {
-  Ethereum: { chain: chains.mainnet, rpc: process.env.RPC_ETHEREUM, native: 'ETH', tokens: { USDC: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', USDT: '0xdAC17F958D2ee523a2206206994597C13D831ec7' } },
-  Base: { chain: chains.base, rpc: process.env.RPC_BASE, native: 'ETH', tokens: { USDC: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', USDT: '0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2' } },
-  Arbitrum: { chain: chains.arbitrum, rpc: process.env.RPC_ARBITRUM, native: 'ETH', tokens: { USDC: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831', USDT: '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9' } },
-  BSC: { chain: chains.bsc, rpc: process.env.RPC_BSC, native: 'BNB', tokens: { USDC: '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d', USDT: '0x55d398326f99059fF775485246999027B3197955' } },
-  Polygon: { chain: chains.polygon, rpc: process.env.RPC_POLYGON, native: 'POL', tokens: { USDC: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359', USDT: '0xc2132D05D31c914a87C6611C10748AEb04B58e8F' } }
+  Ethereum: { chain: chains.mainnet, rpc: process.env.RPC_ETHEREUM || 'https://ethereum-rpc.publicnode.com', native: 'ETH', tokens: { USDC: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', USDT: '0xdAC17F958D2ee523a2206206994597C13D831ec7' } },
+  Base: { chain: chains.base, rpc: process.env.RPC_BASE || 'https://base-rpc.publicnode.com', native: 'ETH', tokens: { USDC: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', USDT: '0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2' } },
+  Arbitrum: { chain: chains.arbitrum, rpc: process.env.RPC_ARBITRUM || 'https://arbitrum-one-rpc.publicnode.com', native: 'ETH', tokens: { USDC: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831', USDT: '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9' } },
+  BSC: { chain: chains.bsc, rpc: process.env.RPC_BSC || 'https://bsc-rpc.publicnode.com', native: 'BNB', tokens: { USDC: '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d', USDT: '0x55d398326f99059fF775485246999027B3197955' } },
+  Polygon: { chain: chains.polygon, rpc: process.env.RPC_POLYGON || 'https://polygon-bor-rpc.publicnode.com', native: 'POL', tokens: { USDC: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359', USDT: '0xc2132D05D31c914a87C6611C10748AEb04B58e8F' } }
 };
 const clients = {};
-const client = (net) => clients[net] || (clients[net] = createPublicClient({ chain: NETWORKS[net].chain, transport: http(NETWORKS[net].rpc || undefined, { timeout: 12000 }) }));
+const client = (net) => clients[net] || (clients[net] = createPublicClient({ chain: NETWORKS[net].chain, transport: http(NETWORKS[net].rpc, { timeout: 8000 }) }));
 const decCache = new Map();
 async function decimals(net, token) {
   const k = net + token;

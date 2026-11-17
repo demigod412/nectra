@@ -107,13 +107,33 @@
         add('<div class="msg__bubble">Applied the tuned settings to this draft. Re-run a backtest to compare, or deploy when you’re ready. Remember these were optimised on past data.</div>', 'ai');
       }
       if (act === 'deploy') {
-        const ok = await NX.confirm({ title: 'Deploy in paper trading?', body: 'This strategy runs with simulated funds from your paper account against live prices. No real transaction is signed.', confirm: 'Confirm & deploy' });
-        if (!ok) return;
-        const r = await NX.act(b, () => NX.post('/api/copilot/deploy', { id }));
+        const isLive = NX.data && NX.data.user && !NX.data.user.paperMode;
+        let code = null;
+        if (isLive) {
+          if (NX.data.user.twoFA) {
+            code = await NX.askCode('Deploy LIVE bot?', 'This strategy will trade with live funds. Confirm with your authenticator code:');
+            if (!code) return;
+          } else {
+            const ok = await NX.confirm({
+              title: 'Deploy LIVE bot?',
+              body: 'This strategy will trade in LIVE mode using connected wallet balances. Losses are possible.',
+              confirm: 'Deploy live bot'
+            });
+            if (!ok) return;
+          }
+        } else {
+          const ok = await NX.confirm({
+            title: 'Deploy in paper trading?',
+            body: 'This strategy runs with simulated funds from your paper account against live prices. No real transaction is signed.',
+            confirm: 'Confirm & deploy'
+          });
+          if (!ok) return;
+        }
+        const r = await NX.act(b, () => NX.post('/api/copilot/deploy', { id, mode: isLive ? 'live' : 'paper', code }));
         if (!r) return;
         card.classList.add('is-deployed');
-        card.querySelector('.strategy__foot:last-child').innerHTML = `<span class="tag tag--green">${NX.icon('check')} ${r.guard ? 'Guard active' : 'Deployed · paper'}</span><a class="btn btn--sm btn--ghost" href="${r.guard ? 'settings.html#risk' : 'dashboard.html'}">${r.guard ? 'View risk limits' : 'View on dashboard'}</a>`;
-        NX.toast(r.guard ? `Portfolio guard set at −${r.guard}%` : 'Strategy deployed', { msg: r.guard ? 'All bots pause if triggered.' : 'Running in paper-trading mode.' });
+        card.querySelector('.strategy__foot:last-child').innerHTML = `<span class="tag ${isLive ? 'tag--green' : 'tag--paper'}">${NX.icon('check')} ${r.guard ? 'Guard active' : 'Deployed · ' + (isLive ? 'LIVE' : 'paper')}</span><a class="btn btn--sm btn--ghost" href="${r.guard ? 'settings.html#risk' : 'dashboard.html'}">${r.guard ? 'View risk limits' : 'View on dashboard'}</a>`;
+        NX.toast(r.guard ? `Portfolio guard set at −${r.guard}%` : `Strategy deployed ${isLive ? 'LIVE' : 'in paper mode'}`, { type: 'success', msg: isLive ? 'Bot is active in live trading mode.' : 'Running in paper-trading mode.' });
         document.dispatchEvent(new CustomEvent('nx:refresh'));
       }
     });

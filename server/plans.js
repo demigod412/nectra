@@ -15,7 +15,7 @@ const MONTH = 30 * DAY;
 const YEAR = 365 * DAY;
 
 /* Fallback perks for users on no paid plan (mirrors the seeded Free plan). */
-const FREE_PERKS = { maxBots: 2, maxBudget: 1000, live: false, advanced: false, backtestRange: '90D', prioritySupport: false };
+const FREE_PERKS = { maxBots: 2, maxBudget: 1000, live: true, advanced: false, backtestRange: '90D', prioritySupport: false };
 /* When monetization is turned off platform-wide, nothing is gated by a plan. */
 const UNLIMITED_PERKS = { maxBots: 999, maxBudget: 1e9, live: true, advanced: true, backtestRange: '1Y', prioritySupport: true };
 
@@ -81,7 +81,9 @@ function perksFor(userId) {
   const sub = currentSub(userId);
   if (sub && sub.plan && sub.plan.price_usd > 0) return { ...FREE_PERKS, ...sub.plan.perks };
   const free = freePlan();
-  return { ...FREE_PERKS, ...(free ? free.perks : {}) };
+  const base = { ...FREE_PERKS, ...(free ? free.perks : {}) };
+  if (getSettings().live_trading_enabled) base.live = true;
+  return base;
 }
 
 /** Public snapshot for the pricing page. */

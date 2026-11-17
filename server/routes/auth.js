@@ -190,6 +190,7 @@ module.exports = (r) => {
       const id = createUser({ email, password, name: String(name || email.split('@')[0]).slice(0, 40), verified: 0, invite: inv && inv.code });
       if (inv) consumeInvite(inv, id);
       onNewUser(id);
+      require('../compliance').acceptTerms(id);
       return id;
     });
     const u = q.get('SELECT * FROM users WHERE id = ?', userId);

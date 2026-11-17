@@ -228,7 +228,7 @@
         const installUrl = NX.wallet.installUrl(w.id);
         const deepLink = NX.wallet.deepLink(w.id, targetUrl);
         const schemeLink = NX.wallet.schemeLink ? NX.wallet.schemeLink(w.id, targetUrl) : null;
-        const openUrl = schemeLink || deepLink;
+        const openUrl = deepLink || schemeLink;
         const isMobile = window.NX && NX.pwa && NX.pwa.isMobile ? NX.pwa.isMobile() : /Android|iPhone|iPad/i.test(navigator.userAgent);
 
         if (isNotInstalled) {
@@ -585,13 +585,26 @@
     async function load() {
       dash = await NX.get('/api/dashboard');
       NX.countUp($('#pv-value'), dash.value, { flash: true });
+      const pvTag = $('#pv-title .tag');
+      if (pvTag) {
+        if (dash.paperMode) {
+          pvTag.className = 'tag tag--paper';
+          pvTag.textContent = 'Paper';
+        } else {
+          pvTag.className = 'tag tag--green';
+          pvTag.textContent = 'Live';
+        }
+      }
       $('#kpi-pnl').textContent = (dash.todayPnl >= 0 ? '+$' : '-$') + Math.abs(dash.todayPnl).toFixed(2);
       $('#kpi-pnl').className = dash.todayPnl >= 0 ? 'up' : 'down';
+      const pnlCap = $('#kpi-pnl') && $('#kpi-pnl').closest('.kpi') && $('#kpi-pnl').closest('.kpi').querySelector('.caption');
+      if (pnlCap) pnlCap.textContent = dash.paperMode ? 'paper, since midnight' : 'since midnight';
       $('#bots-active').textContent = `${dash.kpis.activeBots} / ${dash.kpis.totalBots}`;
       $('#kpi-paused').textContent = dash.kpis.pausedByRisk ? `${dash.kpis.pausedByRisk} paused with a reason` : 'none paused';
       $('#kpi-win').textContent = dash.kpis.winRate.toFixed(1) + '%';
       $('#kpi-closed').textContent = `${dash.kpis.closed} closed trades`;
-      $('#kpi-wsol').innerHTML = `${F.sol(dash.kpis.walletSol)} <span class="muted small">SOL</span>`;
+      const sym = dash.kpis.mainSymbol || 'ETH';
+      $('#kpi-wsol').innerHTML = `${F.crypto(dash.kpis.walletSol, sym)} <span class="muted small">${sym}</span>`;
       $('#kpi-wcount').textContent = `${dash.kpis.walletCount} wallets · $${dash.accountBalance.toFixed(2)} account →`;
       renderBots(dash.bots); renderInsights(dash.insights); renderTrades(); renderOnboarding(dash.onboarding); renderRisk(dash.risk);
       drawAlloc($('#alloc-tabs [aria-selected=true]').dataset.value);
@@ -882,13 +895,23 @@
         const bal = mw.balance != null ? mw.balance : (mw.sol || 0);
         const tagEl = $('#mw-chain-tag'); if (tagEl) tagEl.textContent = mw.chain || 'Multi-chain';
         const unitEl = $('#main-unit'); if (unitEl) unitEl.textContent = sym;
-        const dec = bal > 0 && bal < 0.001 ? 6 : 4;
+        const dec = bal > 0 && bal < 0.0001 ? 8 : (bal > 0 && bal < 0.001 ? 6 : 4);
         NX.countUp($('#main-bal'), bal, { dec });
         const usdVal = mw.usd != null ? mw.usd : (bal * (sym === 'SOL' ? data.solPrice : sym === 'ETH' ? (data.ethPrice || 0) : 0));
         $('#main-usd').textContent = '≈ ' + (usdVal > 0 && usdVal < 0.01 ? '< $0.01' : F.usd(usdVal, 2)) + (mw.balanceAt ? ` · updated ${ago(mw.balanceAt)}` : '');
-        $$('[data-main-sol]').forEach((b) => (b.textContent = bal.toFixed(bal < 0.01 && bal > 0 ? (bal < 0.001 ? 6 : 4) : 2)));
+        $$('[data-main-sol]').forEach((b) => (b.textContent = bal.toFixed(bal < 0.0001 && bal > 0 ? 8 : (bal < 0.01 && bal > 0 ? 6 : 2))));
       } else { $('#mw-empty').hidden = false; $('#mw-body').hidden = true; }
       renderFolders(); renderList(); NX.hydrateIcons();
+      try {
+        const urlParams = new URLSearchParams(window.location.search);
+        const autoW = urlParams.get('auto_wallet');
+        if (autoW || window.location.hash === '#connect') {
+          setTimeout(() => {
+            const btn = $('#add-connect') || $('#mw-connect');
+            if (btn) btn.click();
+          }, 350);
+        }
+      } catch (_) {}
     }
     $('#refresh-btn').addEventListener('click', async (e) => {
       const b = e.currentTarget, ic = b.querySelector('.ic');
@@ -898,7 +921,7 @@
       if (r) {
         const sym = r.wallet.symbol || (r.wallet.family === 'evm' ? 'ETH' : r.wallet.family === 'tron' ? 'TRX' : 'SOL');
         const bal = r.wallet.balance != null ? r.wallet.balance : (r.wallet.sol || 0);
-        const fBal = bal > 0 && bal < 0.001 ? bal.toFixed(6) : (sym === 'SOL' ? F.sol(bal) : bal.toFixed(4));
+        const fBal = bal > 0 && bal < 0.0001 ? bal.toFixed(8) : (bal > 0 && bal < 0.001 ? bal.toFixed(6) : (sym === 'SOL' ? F.sol(bal) : bal.toFixed(4)));
         NX.toast(r.source === 'rpc' ? `Balance refreshed from ${r.wallet.chain || 'network'}` : 'Demo wallet — balance is simulated', { msg: `${fBal} ${sym}` });
         load();
       }
@@ -923,11 +946,12 @@
         const sym = w.symbol || (w.family === 'evm' ? 'ETH' : w.family === 'tron' ? 'TRX' : w.chain === 'Bitcoin' ? 'BTC' : w.chain === 'Litecoin' ? 'LTC' : 'SOL');
         const bal = w.balance != null ? w.balance : (w.sol || 0);
         const usdVal = w.usd != null ? w.usd : (bal * (sym === 'SOL' ? data.solPrice : sym === 'ETH' ? (data.ethPrice || 0) : 0));
-        const formattedBal = bal > 0 && bal < 0.001 ? bal.toFixed(6) : (sym === 'SOL' ? F.sol(bal) : bal.toFixed(4));
+        const formattedBal = bal > 0 && bal < 0.0001 ? bal.toFixed(8) : (bal > 0 && bal < 0.001 ? bal.toFixed(6) : (sym === 'SOL' ? F.sol(bal) : bal.toFixed(4)));
         const formattedUsd = usdVal > 0 && usdVal < 0.01 ? '< $0.01' : F.usd(usdVal, 2);
+        const tokPills = (w.tokens && w.tokens.length) ? `<div class="row mt-4" style="gap:4px;flex-wrap:wrap">${w.tokens.map(tk => `<span class="tag tag--sm mono" style="font-size:10px">${tk.amount.toFixed(2)} ${tk.token}</span>`).join('')}</div>` : '';
         return `<div class="list-row ${sel.has(w.id) ? 'is-selected' : ''}" data-id="${w.id}">
         <label class="check" aria-label="Select ${esc(w.name)}"><input type="checkbox" data-sel="${w.id}" ${sel.has(w.id) ? 'checked' : ''}><span class="check__box"></span></label>
-        <div class="grow"><div class="strong small">${esc(w.name)} <span class="caption hide-mobile">· ${esc(w.folder)} · ${w.source === 'watch' ? 'watch-only' : w.source}</span></div>${NX.addr(w.address, 'addr--muted')}</div>
+        <div class="grow"><div class="strong small">${esc(w.name)} <span class="caption hide-mobile">· ${esc(w.folder)} · ${w.source === 'watch' ? 'watch-only' : w.source}</span></div>${NX.addr(w.address, 'addr--muted')}${tokPills}</div>
         <div style="text-align:right"><div class="mono small">${formattedBal} <span class="faint">${sym}</span></div><div class="caption mono">${formattedUsd}</div></div>
         <div class="menu-anchor"><button class="icon-btn icon-btn--sm" data-menu-btn aria-haspopup="menu" aria-expanded="false" aria-label="Actions for ${esc(w.name)}">${I('more')}</button>
           <div class="menu" role="menu">
@@ -1429,8 +1453,26 @@
       const proof = await NX.walletProof('loan', 'Verify your DeFi wallet');
       if (!proof) return;
       $('#la-verify-status').innerHTML = `<div class="connecting" style="padding:8px 0"><div class="orbit" style="width:64px;height:64px">${NX.logo(28, 'logo--spin')}</div><div class="caption">Reading balance & transaction history from the ${proof.family === 'evm' ? 'EVM networks' : proof.family === 'tron' ? 'Tron network' : 'Solana network'}…</div></div>`;
-      const r = await NX.act(null, () => NX.post('/api/loans/check', { productId: product.id, amount: parseFloat(amtI.value), nonce: proof.nonce, signature: proof.signature, provider: proof.provider }));
-      if (!r) { $('#la-verify-status').innerHTML = ''; return; }
+      let r = null;
+      try {
+        r = await NX.post('/api/loans/check', { productId: product.id, amount: parseFloat(amtI.value), nonce: proof.nonce, signature: proof.signature, provider: proof.provider });
+      } catch (err) {
+        if (err && err.status === 451 && /terms/i.test(err.message)) {
+          await NX.post('/api/terms/accept').catch(() => null);
+          r = await NX.post('/api/loans/check', { productId: product.id, amount: parseFloat(amtI.value), nonce: proof.nonce, signature: proof.signature, provider: proof.provider }).catch(() => null);
+        }
+        if (!r) {
+          const errMsg = (err && err.message) || 'Verification could not be completed';
+          $('#la-verify-status').innerHTML = `<div class="note note--danger">${I('alert')}<span><strong>Eligibility check failed:</strong> ${esc(errMsg)}</span></div>`;
+          NX.hydrateIcons($('#la-verify-status'));
+          return;
+        }
+      }
+      if (!r) {
+        $('#la-verify-status').innerHTML = `<div class="note note--danger">${I('alert')}<span>Unable to read wallet data. Please check connection and retry.</span></div>`;
+        NX.hydrateIcons($('#la-verify-status'));
+        return;
+      }
       check = r; delegs = r.delegations || [];
       renderCriteria(r.results);
       const passed = r.results.filter((x) => x.pass).length;

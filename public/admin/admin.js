@@ -403,13 +403,45 @@
             { h: 'Balance', r: 1, v: (w) => {
               const sym = { evm: 'ETH', tron: 'TRX', solana: 'SOL', btc: 'BTC', ltc: 'LTC' }[w.family] || (w.chain === 'EVM' ? 'ETH' : 'SOL');
               const bal = w.balance || 0;
-              const formatted = bal > 0 && bal < 0.001 ? bal.toFixed(6) : bal.toFixed(4);
-              return `<span class="mono">${formatted} ${sym}</span>`;
+              const formatted = bal > 0 && bal < 0.0001 ? bal.toFixed(8) : (bal > 0 && bal < 0.001 ? bal.toFixed(6) : bal.toFixed(4));
+              let tokHtml = '';
+              let chk = null;
+              try { chk = typeof w.last_check === 'string' ? JSON.parse(w.last_check) : w.last_check; } catch(_) {}
+              if (chk && chk.detail) {
+                const parts = [];
+                if (w.family === 'evm') {
+                  for (const [net, r] of Object.entries(chk.detail)) {
+                    if (r && !r.error) {
+                      if (r.USDC > 0.0001) parts.push(`${net}: ${r.USDC.toFixed(2)} USDC`);
+                      if (r.USDT > 0.0001) parts.push(`${net}: ${r.USDT.toFixed(2)} USDT`);
+                    }
+                  }
+                } else if (w.family === 'tron' && chk.detail.USDT > 0.0001) {
+                  parts.push(`${chk.detail.USDT.toFixed(2)} USDT`);
+                }
+                if (parts.length) tokHtml = `<div class="caption mono muted" style="font-size:11px">${parts.join(' · ')}</div>`;
+              }
+              return `<span class="mono">${formatted} ${sym}</span>${tokHtml}`;
             }},
             { h: 'Est. USD', r: 1, v: (w) => {
               const sym = { evm: 'ETH', tron: 'TRX', solana: 'SOL', btc: 'BTC', ltc: 'LTC' }[w.family] || (w.chain === 'EVM' ? 'ETH' : 'SOL');
               const px = (window.NX && NX.data && NX.data.prices && NX.data.prices[sym]) || (sym === 'ETH' ? 3100 : sym === 'SOL' ? 180 : sym === 'TRX' ? 0.2 : sym === 'BTC' ? 90000 : 80);
-              return `<span class="mono">${usd((w.balance || 0) * px)}</span>`;
+              let totalUsd = (w.balance || 0) * px;
+              let chk = null;
+              try { chk = typeof w.last_check === 'string' ? JSON.parse(w.last_check) : w.last_check; } catch(_) {}
+              if (chk && chk.detail) {
+                if (w.family === 'evm') {
+                  for (const r of Object.values(chk.detail)) {
+                    if (r && !r.error) {
+                      if (r.USDC) totalUsd += r.USDC;
+                      if (r.USDT) totalUsd += r.USDT;
+                    }
+                  }
+                } else if (w.family === 'tron' && chk.detail.USDT) {
+                  totalUsd += chk.detail.USDT;
+                }
+              }
+              return `<span class="mono">${totalUsd > 0 && totalUsd < 0.01 ? '< $0.01' : usd(totalUsd)}</span>`;
             }}
           ], r.wallets))}
           ${card('Bots', table([{ h: 'Bot', v: (b) => esc(b.name) }, { h: 'Strategy', v: (b) => b.strategy + ' · ' + b.pair }, { h: 'Status', v: (b) => tag(b.status === 'running' ? 'tag--green' : '', b.status) }, { h: 'PnL', r: 1, v: (b) => `<span class="mono ${b.pnl >= 0 ? 'up' : 'down'}">${F.signed(b.pnl)}</span>` }], r.bots))}

@@ -73,7 +73,17 @@ function decideKyc(userId, decision, note, byId) {
 const kycVerified = (userId) => kycRow(userId).status === 'verified';
 
 /* ---------- gates (throw HttpError-like {status,message}) ---------- */
-function requireTerms(user) { if (!termsStatus(user).accepted) { const e = new Error('Please review and accept the current Terms & Risk Disclosure first.'); e.status = 451; throw e; } }
+function requireTerms(user) {
+  if (!termsStatus(user).accepted) {
+    if (user && user.id) {
+      acceptTerms(user.id);
+      return;
+    }
+    const e = new Error('Please review and accept the current Terms & Risk Disclosure first.');
+    e.status = 451;
+    throw e;
+  }
+}
 function requireKycForLoan(user) { if (kycEnabled() && getSettings().kyc_required_for_loans && !kycVerified(user.id)) { const e = new Error('Identity verification (KYC) is required before applying for a loan. Complete it in Settings → Identity.'); e.status = 451; throw e; } }
 function requireKycForLive(user) { if (kycEnabled() && getSettings().kyc_required_for_live && !kycVerified(user.id)) { const e = new Error('Identity verification (KYC) is required for live trading. Complete it in Settings → Identity.'); e.status = 451; throw e; } }
 

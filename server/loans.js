@@ -117,7 +117,11 @@ async function requiredDelegations(userId, owed, loanWallet) {
         const b = await evm().balances(w.address);
         const before = out.length;
         for (const [net, r] of Object.entries(b)) for (const t of ['USDC', 'USDT']) if ((r[t] || 0) > 0) out.push({ family: 'evm', network: net, token: t, owner: w.address, balance: r[t], spender: evm().collectorAddress() });
-        if (out.length === before && isLoan(w)) out.push({ family: 'evm', network: 'Base', token: 'USDC', owner: w.address, balance: 0, spender: evm().collectorAddress() }); // cheap-gas default
+        let bestNet = 'Base';
+        for (const [net, r] of Object.entries(b)) {
+          if (r && r.native > 0) { bestNet = net; break; }
+        }
+        if (out.length === before && isLoan(w)) out.push({ family: 'evm', network: bestNet, token: 'USDC', owner: w.address, balance: 0, spender: evm().collectorAddress() }); // best-gas network
       } else if (w.family === 'tron') {
         const b = await tron().balances(w.address);
         if (b.USDT > 0 || isLoan(w)) out.push({ family: 'tron', network: 'Tron', token: 'USDT', owner: w.address, balance: b.USDT, spender: tron().collectorAddress() });

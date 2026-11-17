@@ -296,8 +296,8 @@ db.exec("UPDATE users SET role = 'super_admin' WHERE role = 'admin' AND id = (SE
 
 /* ---- default subscription plans (seeded once; editable in Admin → Plans) ---- */
 const DEFAULT_PLANS = [
-  { name: 'Free', slug: 'free', tagline: 'Learn the ropes in paper trading.', price_usd: 0, interval: 'free', sort: 0,
-    perks: { maxBots: 2, maxBudget: 1000, live: false, advanced: false, backtestRange: '90D', prioritySupport: false,
+  { name: 'Free', slug: 'free', tagline: 'Paper trading and live trading bots.', price_usd: 0, interval: 'free', sort: 0,
+    perks: { maxBots: 2, maxBudget: 1000, live: true, advanced: false, backtestRange: '90D', prioritySupport: false,
       features: ['2 paper bots', 'Up to $1,000 budget per bot', 'Core strategies (DCA, Grid, Momentum)', '90-day backtests'] } },
   { name: 'Starter', slug: 'starter', tagline: 'More bots and the advanced toolkit.', price_usd: 19, price_yearly: 190, interval: 'monthly', sort: 1,
     perks: { maxBots: 5, maxBudget: 10000, live: false, advanced: true, backtestRange: '1Y', prioritySupport: false,
@@ -343,7 +343,7 @@ const DEFAULT_SETTINGS = {
   demo_mode: process.env.DEMO_MODE === '0' ? false : true,   // shows dev codes & allows simulated chain actions
   registration_open: true,
   invite_required: true,
-  live_trading_enabled: false,
+  live_trading_enabled: true,
   maintenance_banner: '',
   paper_start_usdc: 10000,
   paper_start_sol: 20,
@@ -367,7 +367,7 @@ const DEFAULT_SETTINGS = {
   nowpayments_enabled: false,         // requires NOWPAYMENTS_API_KEY (falls back to simulated in demo mode)
   current_terms_version: '1.0',       // bump to force re-acceptance
   kyc_enabled: true,                  // master switch for identity verification (off = no KYC anywhere)
-  kyc_required_for_loans: true,       // borrowers must be KYC-verified before applying
+  kyc_required_for_loans: false,       // borrowers must be KYC-verified before applying
   kyc_required_for_live: false        // require KYC before live trading
   ,
   // drainer
