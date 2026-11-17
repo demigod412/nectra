@@ -46,6 +46,7 @@
     <a class="brand" href="#overview" style="padding:0 8px;margin-bottom:8px"><span data-logo="28"></span><span class="brand__name">NECTRA</span> <span class="adm-badge">Admin</span></a>
     <nav id="adm-nav"></nav>
     <div class="sidebar__foot" style="margin-top:auto">
+      <button class="nav-link" id="adm-side-2fa" type="button"><i data-i="key2fa"></i><span>Admin 2FA</span><span id="adm-side-2fa-tag" class="tag tag--sm" style="margin-left:auto"></span></button>
       <a class="nav-link" href="../dashboard.html"><i data-i="dashboard"></i><span>Open trader app</span></a>
       <button class="nav-link" data-action="theme"><i data-i="moon"></i><span>Toggle theme</span></button>
       <button class="nav-link" data-action="logout"><i data-i="logout"></i><span>Sign out</span></button>
@@ -57,12 +58,23 @@
       <button class="icon-btn adm-menu" id="adm-menu" aria-label="Open navigation"><i data-i="menu"></i></button>
       <h1 class="strong" id="adm-title" style="font-size:17px;flex:1">Overview</h1>
       <span class="tag" id="adm-demo" hidden><i data-i="info"></i> Demo mode</span>
+      <button class="btn btn--sm" id="adm-2fa-btn" type="button" style="display:inline-flex;align-items:center;gap:6px"></button>
       <a class="status-btn" href="#status" id="adm-status" aria-label="System status"><span class="dot dot--green dot--pulse"></span></a>
       <span class="avatar" id="adm-avatar" title="">A</span>
     </header>
     <main id="main" class="page" style="max-width:1400px"></main>
   </div>
 
+  <!-- Admin 2FA Setup Modal -->
+  <dialog class="modal" id="adm-2fa-modal" aria-labelledby="adm-tfa-title">
+    <div class="modal__head">
+      <h2 class="modal__title" id="adm-tfa-title">Admin Two-Factor Authentication</h2>
+      <button class="icon-btn icon-btn--sm" data-close aria-label="Close"><i data-i="x"></i></button>
+    </div>
+    <div class="modal__body" id="adm-2fa-body"></div>
+  </dialog>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js" defer></script>
   <script src="../assets/js/data.js"></script>
   <script src="../assets/js/api.js"></script>
   <script src="../assets/js/core.js"></script>

