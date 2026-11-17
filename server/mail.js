@@ -25,8 +25,23 @@ function getMailConfig() {
 
 function extractEmail(str) {
   if (!str) return '';
-  const m = str.match(/<([^>]+)>/);
-  return (m ? m[1] : str).trim();
+  const s = String(str).trim();
+  // 1. Angle bracket match: e.g. "Name <email@domain.com>" -> email@domain.com
+  const angleMatch = s.match(/<([^>]+)>/);
+  if (angleMatch) {
+    const inside = angleMatch[1].trim();
+    if (inside.includes('@')) return inside.toLowerCase();
+  }
+  // 2. Parentheses match: e.g. "Name (email@domain.com)" -> email@domain.com
+  const parenMatch = s.match(/\(([^)]+@[^)]+)\)/);
+  if (parenMatch) {
+    return parenMatch[1].trim().toLowerCase();
+  }
+  // 3. Match general email address pattern anywhere in the string
+  const m = s.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+  if (m) return m[0].trim().toLowerCase();
+  // 4. Strip any invalid characters
+  return s.replace(/[<>"'() \t\r\n]/g, '').trim().toLowerCase();
 }
 
 function smtpSend({ to, subject, text, config = null }) {
@@ -35,7 +50,7 @@ function smtpSend({ to, subject, text, config = null }) {
   const port = +(cfg.port || 587);
   const user = (cfg.user || '').trim();
   const pass = (cfg.pass || '').trim();
-  const from = (cfg.from || '').trim() || `${cfg.platformName || 'Platform'} <no-reply@${host || 'domain.local'}>`;
+  const from = (cfg.from || '').trim();
   const implicitTls = !!cfg.secure || port === 465;
 
   if (!host) {
@@ -43,9 +58,26 @@ function smtpSend({ to, subject, text, config = null }) {
   }
 
   const cleanTo = extractEmail(to);
-  const cleanFrom = extractEmail(from);
-  if (!cleanTo) return Promise.reject(new Error('Recipient email is missing or invalid'));
-  if (!cleanFrom) return Promise.reject(new Error('Sender email is missing or invalid'));
+  if (!cleanTo || !cleanTo.includes('@')) {
+    return Promise.reject(new Error(`Recipient email is missing or invalid: ${to}`));
+  }
+
+  let cleanFrom = extractEmail(from);
+  // If cleanFrom is not a valid email, check if username is an email address
+  if (!cleanFrom.includes('@') && user && user.includes('@')) {
+    cleanFrom = extractEmail(user);
+  }
+  // If still no valid email, synthesize one with host domain
+  if (!cleanFrom.includes('@')) {
+    const hostDomain = host.includes('.') ? host.split('.').slice(-2).join('.') : 'domain.local';
+    cleanFrom = `no-reply@${hostDomain}`;
+  }
+
+  // Proper RFC 5322 MIME From header
+  const platform = (cfg.platformName || 'Platform').replace(/["\r\n]/g, '').trim();
+  const mimeFrom = (from && from.includes('<') && from.includes('>'))
+    ? from
+    : `"${platform}" <${cleanFrom}>`;
 
   const domain = host.includes('.') ? host.split('.').slice(-2).join('.') : 'domain.local';
 
@@ -146,8 +178,8 @@ function smtpSend({ to, subject, text, config = null }) {
       await cmd('DATA', [354]);
 
       const msg = [
-        `From: ${from}`,
-        `To: ${to}`,
+        `From: ${mimeFrom}`,
+        `To: <${cleanTo}>`,
         `Subject: ${subject}`,
         'MIME-Version: 1.0',
         'Content-Type: text/plain; charset=utf-8',

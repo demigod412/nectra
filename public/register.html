@@ -48,6 +48,9 @@
           <button class="btn btn--block btn--lg" id="reg-wallet" type="button"><i data-i="wallet"></i> Continue with wallet</button>
           <div class="divider">or with email</div>
           <form id="account-form" class="stack" novalidate>
+            <div style="position:absolute;left:-9999px;opacity:0;pointer-events:none;height:0;overflow:hidden" aria-hidden="true">
+              <input type="text" name="hp_check" id="reg-hp" tabindex="-1" autocomplete="off">
+            </div>
             <div class="field"><label class="label" for="reg-email">Email</label><input class="input" id="reg-email" type="email" autocomplete="email" placeholder="you@example.com" required><span class="hint hint--error" id="reg-email-hint" hidden>Enter a valid email address</span></div>
             <div class="field"><label class="label" for="reg-pw">Password</label><input class="input" id="reg-pw" type="password" autocomplete="new-password" minlength="10" placeholder="10+ characters" required>
               <div class="pw-meter" id="pw-meter" aria-hidden="true"><span></span><span></span><span></span><span></span></div><span class="hint" id="pw-hint" aria-live="polite">Use 10+ characters with a mix of cases, numbers &amp; symbols</span></div>

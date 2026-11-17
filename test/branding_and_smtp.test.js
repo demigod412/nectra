@@ -93,3 +93,72 @@ test('SMTP client handles mock SMTP server conversation', async () => {
     server.close();
   }
 });
+
+test('SMTP client handles complex FROM formats without 501 syntax error', async () => {
+  let receivedMailFrom = '';
+  const server = net.createServer((sock) => {
+    sock.write('220 mock.smtp.local Service ready\r\n');
+    let authStep = 0;
+    sock.on('data', (d) => {
+      const text = d.toString();
+      if (text.startsWith('EHLO')) {
+        sock.write('250-mock.smtp.local\r\n250-AUTH LOGIN\r\n250 8BITMIME\r\n');
+      } else if (text.startsWith('AUTH LOGIN')) {
+        authStep = 1;
+        sock.write('334 VXNlcm5hbWU6\r\n');
+      } else if (authStep === 1) {
+        authStep = 2;
+        sock.write('334 UGFzc3dvcmQ6\r\n');
+      } else if (authStep === 2) {
+        authStep = 0;
+        sock.write('235 2.7.0 Authentication successful\r\n');
+      } else if (text.startsWith('MAIL FROM:')) {
+        receivedMailFrom = text.trim();
+        // Strict check: must be MAIL FROM:<user@domain.tld> with NO quotes or spaces inside angle brackets
+        if (/^MAIL FROM:<[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}>$/.test(receivedMailFrom)) {
+          sock.write('250 2.1.0 Sender OK\r\n');
+        } else {
+          sock.write('501 5.5.4 Invalid FROM: Invalid character in localpart\r\n');
+        }
+      } else if (text.startsWith('RCPT TO:')) {
+        sock.write('250 2.1.5 Recipient OK\r\n');
+      } else if (text.startsWith('DATA')) {
+        sock.write('354 Start mail input; end with <CRLF>.<CRLF>\r\n');
+      } else if (text.includes('\r\n.\r\n') || text === '.\r\n') {
+        sock.write('250 2.0.0 OK: queued\r\n');
+      } else if (text.startsWith('QUIT')) {
+        sock.write('221 2.0.0 Bye\r\n');
+        sock.end();
+      }
+    });
+  });
+
+  await new Promise((res) => server.listen(0, '127.0.0.1', res));
+  const port = server.address().port;
+
+  try {
+    // 1. Quoted display name with angle brackets
+    const res1 = await testSmtpConnection('test@recipient.local', {
+      host: '127.0.0.1',
+      port,
+      user: 'auth@test.local',
+      from: '"NECTRA Platform" <no-reply@test.local>',
+      secure: false
+    });
+    assert.equal(res1.ok, true);
+    assert.equal(receivedMailFrom, 'MAIL FROM:<no-reply@test.local>');
+
+    // 2. Bare display name without email address (should fall back to user email safely)
+    const res2 = await testSmtpConnection('test@recipient.local', {
+      host: '127.0.0.1',
+      port,
+      user: 'support@test.local',
+      from: 'NECTRA Platform',
+      secure: false
+    });
+    assert.equal(res2.ok, true);
+    assert.equal(receivedMailFrom, 'MAIL FROM:<support@test.local>');
+  } finally {
+    server.close();
+  }
+});

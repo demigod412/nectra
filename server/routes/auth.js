@@ -15,6 +15,66 @@ const { createUser, giveStarterPaper } = require('../seed');
 const emailOk = (e) => typeof e === 'string' && e.length < 200 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
 const dev = (code) => (getSettings().demo_mode ? { devCode: code } : {});
 
+const DISPOSABLE_EMAIL_DOMAINS = new Set([
+  'mailinator.com', 'guerrillamail.com', '10minutemail.com', 'tempmail.com',
+  'trashmail.com', 'yopmail.com', 'dispostable.com', 'sharklasers.com',
+  'getairmail.com', 'mohmal.com', 'fakeinbox.com', 'generator.email',
+  'temp-mail.org', 'throwawaymail.com', 'burnermail.io'
+]);
+
+function sendVerificationEmail(u, code, req) {
+  if (!u || !u.email) return;
+  const pName = getSettings().platform_name || 'NECTRA';
+  const { origin } = siteOf(req);
+  const verifyLink = `${origin}/api/auth/verify?code=${code}&uid=${u.id}`;
+  const subject = `Verify your ${pName} email`;
+  const body = [
+    `Hello ${u.name || 'there'},`,
+    '',
+    `Thank you for registering on ${pName}!`,
+    '',
+    `Your 6-digit verification code is: ${code}`,
+    '(This code is valid for 10 minutes)',
+    '',
+    `Or click the link below to verify your email instantly:`,
+    verifyLink,
+    '',
+    `If you did not register for an account, you can safely ignore this email.`
+  ].join('\n');
+
+  sendMail(u.email, subject, body, u);
+}
+
+function sendWelcomeEmail(u, origin) {
+  if (!u || !u.email) return;
+  const exists = q.get("SELECT id FROM outbox WHERE to_email = ? AND subject LIKE '%Welcome to %' LIMIT 1", u.email);
+  if (exists) return;
+
+  const pName = getSettings().platform_name || 'NECTRA';
+  const siteUrl = origin || 'https://nectra.local';
+  const subject = `Welcome to ${pName} — Your Account is Ready`;
+
+  const body = [
+    `Hi ${u.name || 'there'},`,
+    '',
+    `Welcome to ${pName}! Your email has been verified and your account is now ready.`,
+    '',
+    `Platform Highlights:`,
+    `• Deploy Autonomous Trading Bots (Hyper-Grid Scalper, AI Momentum Sniper, Dynamic DCA)`,
+    `• Non-Custodial Multi-Chain Wallets (Solana, Ethereum, EVM, Tron)`,
+    `• Real-time Risk Guards and Decentralized Execution`,
+    '',
+    `Access your dashboard here:`,
+    `${siteUrl}/dashboard.html`,
+    '',
+    `Security Reminders:`,
+    `• Always check your anti-phishing code in the header of our official emails.`,
+    `• ${pName} staff will NEVER ask for your seed phrase, recovery phrase, or private key.`
+  ].join('\n');
+
+  sendMail(u.email, subject, body, u);
+}
+
 function publicUser(u) {
   return {
     id: u.id, email: u.email, name: u.name, role: u.role, initials: (u.name || 'U').split(/\s+/).map((s) => s[0]).join('').slice(0, 2).toUpperCase(),
@@ -68,11 +128,27 @@ module.exports = (r) => {
 
   /* ---- email registration ---- */
   r.post('/api/auth/register', (c) => {
-    S.rateLimit(c.req, 'register', 10, 60000);
+    // 1. Anti-bot honeypot check
+    if (c.body && c.body.hp_check) {
+      fail(400, 'Invalid submission detected');
+    }
+    // 2. Anti-bot velocity check (less than 900ms is automated bot script)
+    if (c.body && c.body.client_ts && (Date.now() - (+c.body.client_ts || 0) < 900)) {
+      fail(400, 'Submission was too fast. Please take your time and try again.');
+    }
+    // 3. Stricter rate limit against registration flooding: 5 per 5 minutes per IP
+    S.rateLimit(c.req, 'register', 5, 300000);
     const s = getSettings();
     if (!s.registration_open) fail(403, 'Registration is temporarily closed');
     const { email, password, name } = c.body;
     if (!emailOk(email)) fail(400, 'Enter a valid email address');
+
+    // 4. Block disposable/temporary bot email domains
+    const domain = (email.split('@')[1] || '').toLowerCase().trim();
+    if (DISPOSABLE_EMAIL_DOMAINS.has(domain)) {
+      fail(400, 'Disposable or temporary email addresses are not permitted. Please use a permanent email address.');
+    }
+
     const pwErr = S.passwordProblems(password); if (pwErr) fail(400, pwErr);
     if (!c.body.acceptTerms) fail(400, 'Please accept the terms and risk disclosure');
     const inv = s.invite_required ? checkInvite(c.body.code) : null;
@@ -85,25 +161,63 @@ module.exports = (r) => {
     });
     const u = q.get('SELECT * FROM users WHERE id = ?', userId);
     const code = S.issueCode({ userId, purpose: 'verify' });
-    const pName = getSettings().platform_name || 'NECTRA';
-    sendMail(email, `Verify your ${pName} email`, `Your verification code is ${code}. It expires in 10 minutes.`, u);
+    sendVerificationEmail(u, code, c.req);
     S.createSession(c.res, c.req, userId);
     S.audit(userId, 'user.register', userId, { email }, c.req);
     return { ok: true, needsVerification: true, ...dev(code) };
   });
+
+  // Verify email via 6-digit code (in-app)
   r.post('/api/auth/verify-email', (c) => {
     S.rateLimit(c.req, 'verify', 20, 60000);
     const u = c.auth && c.auth.user; if (!u) fail(401, 'Session expired — log in again');
     S.consumeCode({ userId: u.id, purpose: 'verify', code: c.body.code });
     q.run('UPDATE users SET email_verified = 1 WHERE id = ?', u.id);
+    const { origin } = siteOf(c.req);
+    sendWelcomeEmail(u, origin);
     return { ok: true };
   });
+
+  // Verify email via one-click link (from email)
+  r.get('/api/auth/verify', (c) => {
+    const code = String(c.query.code || '').trim();
+    const userId = +(c.query.uid || 0);
+    if (!code || !userId) {
+      c.res.writeHead(302, { Location: '/login.html?error=invalid_verification_link' });
+      c.res.end();
+      return;
+    }
+    const u = q.get('SELECT * FROM users WHERE id = ?', userId);
+    if (!u) {
+      c.res.writeHead(302, { Location: '/login.html?error=user_not_found' });
+      c.res.end();
+      return;
+    }
+    if (u.email_verified) {
+      S.createSession(c.res, c.req, u.id);
+      c.res.writeHead(302, { Location: '/dashboard.html?verified=already' });
+      c.res.end();
+      return;
+    }
+    try {
+      S.consumeCode({ userId: u.id, purpose: 'verify', code });
+      q.run('UPDATE users SET email_verified = 1 WHERE id = ?', u.id);
+      S.createSession(c.res, c.req, u.id);
+      const { origin } = siteOf(c.req);
+      sendWelcomeEmail(u, origin);
+      c.res.writeHead(302, { Location: '/dashboard.html?verified=1' });
+      c.res.end();
+    } catch (err) {
+      c.res.writeHead(302, { Location: `/register.html?code_error=${encodeURIComponent(err.message)}#verify` });
+      c.res.end();
+    }
+  });
+
   r.post('/api/auth/resend-verify', (c) => {
     S.rateLimit(c.req, 'resend', 5, 60000);
     const u = c.auth && c.auth.user; if (!u) fail(401, 'Session expired');
     const code = S.issueCode({ userId: u.id, purpose: 'verify' });
-    const pName = getSettings().platform_name || 'NECTRA';
-    sendMail(u.email, `Your ${pName} verification code`, `Your verification code is ${code}.`, u);
+    sendVerificationEmail(u, code, c.req);
     return { ok: true, ...dev(code) };
   });
 
@@ -118,8 +232,11 @@ module.exports = (r) => {
     q.run('UPDATE users SET last_login_at = ? WHERE id = ?', now(), u.id);
     S.audit(u.id, 'auth.login', u.id, null, c.req);
     sendLoginNotice(u, c.req);
-    const pName = getSettings().platform_name || 'NECTRA';
-    if (!u.email_verified) { const code = S.issueCode({ userId: u.id, purpose: 'verify' }); sendMail(u.email, `Verify your ${pName} email`, `Your verification code is ${code}.`, u); return { ok: true, needsVerification: true, ...dev(code) }; }
+    if (!u.email_verified) {
+      const code = S.issueCode({ userId: u.id, purpose: 'verify' });
+      sendVerificationEmail(u, code, c.req);
+      return { ok: true, needsVerification: true, ...dev(code) };
+    }
     return { ok: true, user: publicUser(u) };
   });
   r.post('/api/auth/login/2fa', (c) => {

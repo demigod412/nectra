@@ -336,12 +336,21 @@
       meter.forEach((m, i) => (m.style.background = i < s ? cols[s - 1] : ''));
       pwHint.textContent = ['Use 10+ characters with a mix of cases, numbers & symbols', 'Weak', 'Okay', 'Good', 'Strong'][s];
     });
+    const formStartedAt = Date.now();
     $('#account-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const em = $('#reg-email');
       em.classList.toggle('is-invalid', !emailOk(em.value)); $('#reg-email-hint').hidden = emailOk(em.value);
       if (!emailOk(em.value)) return;
-      const r = await NX.act($('#account-form .btn--primary'), () => NX.post('/api/auth/register', { code: invite, email: em.value, password: pw.value, acceptTerms: $('#reg-terms').checked }));
+      const hp = ($('#reg-hp') && $('#reg-hp').value) || '';
+      const r = await NX.act($('#account-form .btn--primary'), () => NX.post('/api/auth/register', {
+        code: invite,
+        email: em.value,
+        password: pw.value,
+        acceptTerms: $('#reg-terms').checked,
+        hp_check: hp,
+        client_ts: formStartedAt
+      }));
       if (!r) return;
       $('#verify-email-label').textContent = em.value;
       showStep('step-verify'); setProgress(3, TOTAL); NX.devHint(r, $('#verify-dev')); vOtp.focus(); startResend();
