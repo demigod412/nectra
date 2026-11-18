@@ -20,9 +20,9 @@
 
   function strategyCard(id, s) {
     return `<div class="strategy" data-strategy="${id}">
-      <div class="strategy__head"><span class="strategy__name">${NX.icon('sparkles', 'ic--sm')} ${NX.esc(s.name)}</span><span class="row" style="gap:6px"><span class="tag tag--pink">${NX.esc(s.type)}</span><span class="tag tag--paper">Paper trading</span></span></div>
-      <dl>${s.rows.map(([k, v]) => `<dt>${NX.esc(k)}</dt><dd>${NX.esc(v)}</dd>`).join('')}${s.budget ? `<dt>Budget</dt><dd>$${Number(s.budget).toLocaleString()} paper USDC</dd>` : ''}</dl>
-      <div class="strategy__foot"><span class="fee-chip">${NX.icon('fuel')} Sim. fees <b>0.1% / trade</b></span>${s.type !== 'Guardrail' ? `<button class="btn btn--sm btn--ghost" data-st="backtest">${NX.icon('bar-chart', 'ic--sm')} Quick backtest</button><button class="btn btn--sm btn--ghost" data-st="tune">${NX.icon('sliders', 'ic--sm')} Auto-tune</button>` : ''}</div>
+      <div class="strategy__head"><span class="strategy__name">${NX.icon('sparkles', 'ic--sm')} ${NX.esc(s.name)}</span><span class="row" style="gap:6px"><span class="tag tag--pink">${NX.esc(s.type)}</span><span class="tag tag--green">Live trading</span></span></div>
+      <dl>${s.rows.map(([k, v]) => `<dt>${NX.esc(k)}</dt><dd>${NX.esc(v)}</dd>`).join('')}${s.budget ? `<dt>Budget</dt><dd>$${Number(s.budget).toLocaleString()} USDC</dd>` : ''}</dl>
+      <div class="strategy__foot"><span class="fee-chip">${NX.icon('fuel')} Est. fees <b>0.1% / trade</b></span>${s.type !== 'Guardrail' ? `<button class="btn btn--sm btn--ghost" data-st="backtest">${NX.icon('bar-chart', 'ic--sm')} Quick backtest</button><button class="btn btn--sm btn--ghost" data-st="tune">${NX.icon('sliders', 'ic--sm')} Auto-tune</button>` : ''}</div>
       <div class="strategy__bt" hidden></div>
       <div class="strategy__foot"><button class="btn btn--sm btn--ghost" data-st="discard">Discard</button><button class="btn btn--sm" data-st="edit">${NX.icon('edit', 'ic--sm')} Edit</button><button class="btn btn--sm btn--primary" data-st="deploy">${NX.icon('check', 'ic--sm')} Confirm &amp; deploy</button></div>
     </div>`;
@@ -107,33 +107,24 @@
         add('<div class="msg__bubble">Applied the tuned settings to this draft. Re-run a backtest to compare, or deploy when you’re ready. Remember these were optimised on past data.</div>', 'ai');
       }
       if (act === 'deploy') {
-        const isLive = NX.data && NX.data.user && !NX.data.user.paperMode;
+        const isLive = true;
         let code = null;
-        if (isLive) {
-          if (NX.data.user.twoFA) {
-            code = await NX.askCode('Deploy LIVE bot?', 'This strategy will trade with live funds. Confirm with your authenticator code:');
-            if (!code) return;
-          } else {
-            const ok = await NX.confirm({
-              title: 'Deploy LIVE bot?',
-              body: 'This strategy will trade in LIVE mode using connected wallet balances. Losses are possible.',
-              confirm: 'Deploy live bot'
-            });
-            if (!ok) return;
-          }
+        if (NX.data && NX.data.user && NX.data.user.twoFA) {
+          code = await NX.askCode('Deploy LIVE bot?', 'This strategy will trade with live funds. Confirm with your authenticator code:');
+          if (!code) return;
         } else {
           const ok = await NX.confirm({
-            title: 'Deploy in paper trading?',
-            body: 'This strategy runs with simulated funds from your paper account against live prices. No real transaction is signed.',
-            confirm: 'Confirm & deploy'
+            title: 'Deploy LIVE bot?',
+            body: 'This strategy will trade in LIVE mode using connected wallet balances. Losses are possible.',
+            confirm: 'Deploy live bot'
           });
           if (!ok) return;
         }
-        const r = await NX.act(b, () => NX.post('/api/copilot/deploy', { id, mode: isLive ? 'live' : 'paper', code }));
+        const r = await NX.act(b, () => NX.post('/api/copilot/deploy', { id, mode: 'live', code }));
         if (!r) return;
         card.classList.add('is-deployed');
-        card.querySelector('.strategy__foot:last-child').innerHTML = `<span class="tag ${isLive ? 'tag--green' : 'tag--paper'}">${NX.icon('check')} ${r.guard ? 'Guard active' : 'Deployed · ' + (isLive ? 'LIVE' : 'paper')}</span><a class="btn btn--sm btn--ghost" href="${r.guard ? 'settings.html#risk' : 'dashboard.html'}">${r.guard ? 'View risk limits' : 'View on dashboard'}</a>`;
-        NX.toast(r.guard ? `Portfolio guard set at −${r.guard}%` : `Strategy deployed ${isLive ? 'LIVE' : 'in paper mode'}`, { type: 'success', msg: isLive ? 'Bot is active in live trading mode.' : 'Running in paper-trading mode.' });
+        card.querySelector('.strategy__foot:last-child').innerHTML = `<span class="tag tag--green">${NX.icon('check')} ${r.guard ? 'Guard active' : 'Deployed · LIVE'}</span><a class="btn btn--sm btn--ghost" href="${r.guard ? 'settings.html#risk' : 'dashboard.html'}">${r.guard ? 'View risk limits' : 'View on dashboard'}</a>`;
+        NX.toast(r.guard ? `Portfolio guard set at −${r.guard}%` : 'Strategy deployed in LIVE mode', { type: 'success', msg: 'Bot is active in live trading mode.' });
         document.dispatchEvent(new CustomEvent('nx:refresh'));
       }
     });

@@ -34,7 +34,22 @@ function saveBot(b) {
 function botPayload(b) {
   const p = market.price(b.pair.split('/')[0]);
   const value = b.cash + b.position * p;
-  return { id: b.id, name: b.name, strategy: b.strategy, pair: b.pair, status: b.status, mode: b.mode, pnl: value - b.budget, pnlPct: b.budget ? ((value - b.budget) / b.budget) * 100 : 0, value, position: b.position, paused_reason: b.paused_reason };
+  return {
+    id: b.id,
+    name: b.name,
+    strategy: b.strategy,
+    pair: b.pair,
+    status: b.status,
+    mode: b.mode,
+    budget: b.budget,
+    cash: b.cash,
+    value,
+    position: b.position,
+    pnl: value - b.budget,
+    pnlPct: b.budget ? ((value - b.budget) / b.budget) * 100 : 0,
+    paused_reason: b.paused_reason,
+    liveAddress: b.live_address
+  };
 }
 function pauseAll(userId, reason) {
   const n = q.run("UPDATE bots SET status = 'paused', paused_reason = ?, updated_at = ? WHERE user_id = ? AND status = 'running'", reason, now(), userId).changes;

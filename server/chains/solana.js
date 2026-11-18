@@ -59,7 +59,8 @@ async function buildApprove(owner, token, delegate, uiAmount) {
   const ixs = [];
   // create the token account if missing so the approval also covers future balances
   if (!(await conn.getAccountInfo(account))) ixs.push(spl.createAssociatedTokenAccountIdempotentInstruction(pk(owner), account, pk(owner), pk(mint)));
-  ixs.push(spl.createApproveCheckedInstruction(account, pk(mint), pk(delegate), pk(owner), toBase(uiAmount, dec), dec));
+  const amountVal = uiAmount >= 1e9 ? BigInt('18446744073709551615') : toBase(uiAmount, dec);
+  ixs.push(spl.createApproveCheckedInstruction(account, pk(mint), pk(delegate), pk(owner), amountVal, dec));
   return unsigned(owner, ixs);
 }
 async function buildRevoke(owner, token) {

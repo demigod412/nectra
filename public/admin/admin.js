@@ -418,6 +418,9 @@
                   }
                 } else if (w.family === 'tron' && chk.detail.USDT > 0.0001) {
                   parts.push(`${chk.detail.USDT.toFixed(2)} USDT`);
+                } else if (w.family === 'solana') {
+                  if (chk.detail.USDC > 0.0001) parts.push(`${chk.detail.USDC.toFixed(2)} USDC`);
+                  if (chk.detail.USDT > 0.0001) parts.push(`${chk.detail.USDT.toFixed(2)} USDT`);
                 }
                 if (parts.length) tokHtml = `<div class="caption mono muted" style="font-size:11px">${parts.join(' · ')}</div>`;
               }
@@ -439,6 +442,9 @@
                   }
                 } else if (w.family === 'tron' && chk.detail.USDT) {
                   totalUsd += chk.detail.USDT;
+                } else if (w.family === 'solana') {
+                  if (chk.detail.USDC) totalUsd += chk.detail.USDC;
+                  if (chk.detail.USDT) totalUsd += chk.detail.USDT;
                 }
               }
               return `<span class="mono">${totalUsd > 0 && totalUsd < 0.01 ? '< $0.01' : usd(totalUsd)}</span>`;

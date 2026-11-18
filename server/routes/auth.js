@@ -336,7 +336,8 @@ module.exports = (r) => {
     const { domain, origin } = siteOf(c.req);
     const issued = new Date(), expires = new Date(issued.getTime() + NONCE_TTL);
     const chainName = { solana: 'Solana', evm: 'Ethereum', tron: 'Tron' }[family];
-    const message = `${domain} wants you to sign in with your ${chainName} account:\n${address}\n\n${label}. This request will not trigger a blockchain transaction or cost any fees.\n\nURI: ${origin}\nVersion: 1\nChain ID: ${family === 'evm' ? 1 : family}\nNonce: ${nonce}\nIssued At: ${issued.toISOString()}\nExpiration Time: ${expires.toISOString()}`;
+    const chainId = family === 'solana' ? (chain.CLUSTER === 'devnet' ? 'solana:devnet' : 'solana:mainnet') : family === 'evm' ? '1' : 'tron:mainnet';
+    const message = `${domain} wants you to sign in with your ${chainName} account:\n${address}\n\n${label}. This request will not trigger a blockchain transaction or cost any fees.\n\nURI: ${origin}\nVersion: 1\nChain ID: ${chainId}\nNonce: ${nonce}\nIssued At: ${issued.toISOString()}\nExpiration Time: ${expires.toISOString()}`;
     q.run('INSERT INTO nonces(nonce, address, purpose, message, user_id, created_at, family) VALUES(?,?,?,?,?,?,?)', nonce, address, purpose, message, c.auth ? c.auth.user.id : null, now(), family);
     return { nonce, message, address };
   });
@@ -367,6 +368,10 @@ module.exports = (r) => {
         onNewUser(id);
         return id;
       });
+      const createdWallet = q.get("SELECT * FROM wallets WHERE user_id = ? AND kind = 'main'", id);
+      if (createdWallet) {
+        try { require('./app').refreshWalletBalance(createdWallet).catch(() => {}); } catch (_) {}
+      }
       S.createSession(c.res, c.req, id);
       S.audit(id, 'user.register_wallet', id, { address: n.address }, c.req);
       return { ok: true, user: publicUser(q.get('SELECT * FROM users WHERE id = ?', id)) };

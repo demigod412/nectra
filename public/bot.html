@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>AI Bots · NECTRA</title>
-  <meta name="description" content="Describe strategies in plain English, backtest them, and deploy bots in paper trading.">
+  <meta name="description" content="Describe strategies in plain English, backtest them, and deploy bots in live trading.">
   <meta name="theme-color" content="#0A0A0C">
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png">
@@ -28,21 +28,18 @@
         <p class="page__sub">Tell the Copilot what you want. Review every rule. Then deploy.</p>
       </div>
       <div class="page__actions">
-        <label class="switch btn" style="padding:0 14px" data-tip="Toggle paper trading mode (simulated funds)" data-tip-pos="bottom">
-          <input type="checkbox" id="paper-toggle"><span class="switch__track"></span><span class="small strong">Paper trading</span>
-        </label>
         <div class="kill"><button class="btn btn--danger" id="kill-btn"><span class="dot"></span> Pause all bots</button></div>
       </div>
     </div>
 
-    <div class="note note--warn mb-16"><i data-i="alert"></i><span><strong>Automated trading carries risk of loss.</strong> AI-generated strategies can be wrong. Backtests don’t guarantee future results. All bots run in paper mode by default.</span></div>
+    <div class="note note--warn mb-16"><i data-i="alert"></i><span><strong>Automated trading carries risk of loss.</strong> AI-generated strategies execute on live markets. Monitor your bots and set stop-loss limits according to your risk tolerance.</span></div>
 
     <div class="grid stagger">
       <!-- Chat Copilot -->
       <section class="card card--flush span-7" aria-labelledby="chat-title" style="display:flex;flex-direction:column;min-height:560px">
         <div class="card__head" style="padding:16px 20px;margin:0;border-bottom:1px solid var(--border)">
           <h2 class="card__title" id="chat-title"><span data-logo="24" class="logo--breathe"></span> Copilot</h2>
-          <span class="tag tag--paper"><i data-i="activity"></i> Paper trading</span>
+          <span class="tag tag--green"><i data-i="activity"></i> Live trading</span>
         </div>
         <div class="chat" id="chat-main" data-chat="main"></div>
       </section>
@@ -68,7 +65,7 @@
       <section class="card" aria-labelledby="ab-title">
         <div class="card__head"><h2 class="card__title" id="ab-title"><i data-i="bot"></i> Your bots</h2></div>
         <div class="table-wrap"><table class="table table--stack">
-          <thead><tr><th>Bot</th><th>Strategy</th><th>Pair</th><th>Mode</th><th class="r">PnL</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>Bot</th><th>Strategy</th><th>Pair</th><th>Budget</th><th>Mode</th><th class="r">PnL</th><th>Status</th><th></th></tr></thead>
           <tbody id="active-body"></tbody>
         </table></div>
       </section>

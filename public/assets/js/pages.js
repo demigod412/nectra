@@ -614,16 +614,16 @@
     skeleton(botsEl, 4);
     function renderBots(bots) {
       botsEl.innerHTML = bots.length ? bots.map((b) => `<div class="list-row" data-bot-row="${b.id}"><span class="tok" style="background:var(--bg-raised);color:var(--pink)">${I('bot', 'ic--sm')}</span>
-          <div class="grow"><div class="strong small truncate">${esc(b.name)}</div><div class="caption truncate">${b.strategy} · ${b.pair}${b.status === 'paused' && b.paused_reason ? ' · ' + esc(b.paused_reason) : ''}</div></div>
+          <div class="grow"><div class="strong small truncate">${esc(b.name)}</div><div class="caption truncate">${b.strategy} · ${b.pair} · <b class="mono" style="color:var(--text)">Trading: $${b.budget ? Number(b.budget).toFixed(2) : (b.cash ? Number(b.cash).toFixed(2) : '0.00')}</b>${b.status === 'paused' && b.paused_reason ? ' · ' + esc(b.paused_reason) : ''}</div></div>
           <div style="text-align:right;min-width:80px"><div class="mono small ${b.pnl >= 0 ? 'up' : 'down'}">${F.signed(b.pnl)}</div><div class="caption mono">${F.pct(b.pnlPct, 1)}</div></div>
           <label class="switch switch--green" aria-label="${b.status === 'running' ? 'Pause' : 'Resume'} ${esc(b.name)}"><input type="checkbox" data-bot="${b.id}" ${b.status === 'running' ? 'checked' : ''}><span class="switch__track"></span></label></div>`).join('')
-        : NX.empty('No bots yet', 'Describe a strategy to the Copilot and deploy it in paper mode.', '<a class="btn btn--primary" href="bot.html#new">Create a bot</a>');
+        : NX.empty('No bots yet', 'Describe a strategy to the Copilot and deploy it.', '<a class="btn btn--primary" href="bot.html#new">Create a bot</a>');
     }
     botsEl.addEventListener('change', async (e) => {
       const id = e.target.dataset.bot; if (!id) return;
       const r = await NX.act(null, () => NX.post(`/api/bots/${id}/toggle`, { on: e.target.checked }));
       if (!r) { e.target.checked = !e.target.checked; return; }
-      NX.toast(`${r.bot.name} ${r.bot.status === 'running' ? 'resumed' : 'paused'}`, { type: r.bot.status === 'running' ? 'success' : 'warn', msg: 'Paper trading' });
+      NX.toast(`${r.bot.name} ${r.bot.status === 'running' ? 'resumed' : 'paused'}`, { type: r.bot.status === 'running' ? 'success' : 'warn', msg: 'Live bot' });
       load();
     });
 
@@ -759,10 +759,10 @@
     function renderActive() {
       const sel = $('#bt-strategy');
       sel.innerHTML = data.bots.length ? data.bots.map((b) => `<option value="${b.id}">${esc(b.name)} · ${b.pair}</option>`).join('') : '<option value="">Deploy a bot to backtest it</option>';
-      $('#active-body').innerHTML = data.bots.length ? data.bots.map((b) => `<tr><td data-label="Bot"><div class="pair"><span class="tok tok--sm" style="background:var(--bg-raised);color:var(--pink)">${I('bot', 'ic--sm')}</span><b class="small">${esc(b.name)}</b></div></td><td data-label="Strategy" class="small">${b.strategy}</td><td data-label="Pair" class="small mono">${b.pair}</td><td data-label="Mode">${b.mode === 'paper' ? `<span class="tag tag--paper">Paper</span>${data.liveEnabled && ['Grid', 'DCA', 'Momentum', 'Scalp', 'Breakout', 'Dip-buy', 'Mean-reversion'].includes(b.strategy) ? ` <button class="link small" data-golive="${b.id}">Go live</button>` : ''}` : `<span class="tag tag--green">LIVE</span> <button class="link small" data-wallet="${b.id}">Wallet</button>`}</td><td data-label="PnL" class="r num ${b.pnl >= 0 ? 'up' : 'down'}">${F.signed(b.pnl)}</td>
+      $('#active-body').innerHTML = data.bots.length ? data.bots.map((b) => `<tr><td data-label="Bot"><div class="pair"><span class="tok tok--sm" style="background:var(--bg-raised);color:var(--pink)">${I('bot', 'ic--sm')}</span><b class="small">${esc(b.name)}</b></div></td><td data-label="Strategy" class="small">${b.strategy}</td><td data-label="Pair" class="small mono">${b.pair}</td><td data-label="Budget" class="r mono small">$${b.budget ? Number(b.budget).toFixed(2) : (b.cash ? Number(b.cash).toFixed(2) : '0.00')}</td><td data-label="Mode"><span class="tag tag--green">LIVE</span> <button class="link small" data-wallet="${b.id}">Wallet</button></td><td data-label="PnL" class="r num ${b.pnl >= 0 ? 'up' : 'down'}">${F.signed(b.pnl)}</td>
         <td data-label="Status"><button class="tag ${b.status === 'running' ? 'tag--green' : ''}" data-toggle="${b.id}" data-on="${b.status !== 'running'}" title="${esc(b.paused_reason || '')}"><span class="dot ${b.status === 'running' ? 'dot--pulse' : 'dot--muted'}"></span>${b.status === 'running' ? 'Running' : 'Paused'}</button></td>
         <td data-label="" class="r"><button class="icon-btn icon-btn--sm" data-stats="${b.id}" aria-label="Performance of ${esc(b.name)}">${I('bar-chart')}</button> <button class="icon-btn icon-btn--sm" data-delete="${b.id}" aria-label="Stop and remove ${esc(b.name)}">${I('trash')}</button></td></tr>`).join('')
-        : `<tr><td colspan="7">${NX.empty('No bots yet', 'Use the Copilot or a template below.')}</td></tr>`;
+        : `<tr><td colspan="8">${NX.empty('No bots yet', 'Use the Copilot or a template below.')}</td></tr>`;
     }
     renderActive();
     $('#active-body').addEventListener('click', async (e) => {
@@ -900,6 +900,12 @@
         const usdVal = mw.usd != null ? mw.usd : (bal * (sym === 'SOL' ? data.solPrice : sym === 'ETH' ? (data.ethPrice || 0) : 0));
         $('#main-usd').textContent = '≈ ' + (usdVal > 0 && usdVal < 0.01 ? '< $0.01' : F.usd(usdVal, 2)) + (mw.balanceAt ? ` · updated ${ago(mw.balanceAt)}` : '');
         $$('[data-main-sol]').forEach((b) => (b.textContent = bal.toFixed(bal < 0.0001 && bal > 0 ? 8 : (bal < 0.01 && bal > 0 ? 6 : 2))));
+        const mainTokEl = $('#main-tokens');
+        if (mainTokEl) {
+          mainTokEl.innerHTML = (mw.tokens && mw.tokens.length)
+            ? `<div class="row" style="gap:6px;flex-wrap:wrap">${mw.tokens.map(tk => `<span class="tag tag--green mono" style="font-size:11px">${tk.amount > 0 && tk.amount < 0.01 ? tk.amount.toFixed(4) : tk.amount.toFixed(2)} ${tk.token}${tk.network ? ` (${tk.network})` : ''}</span>`).join('')}</div>`
+            : '';
+        }
       } else { $('#mw-empty').hidden = false; $('#mw-body').hidden = true; }
       renderFolders(); renderList(); NX.hydrateIcons();
       try {
@@ -1477,9 +1483,11 @@
       renderCriteria(r.results);
       const passed = r.results.filter((x) => x.pass).length;
       gauge.set(passed / r.results.length, `${passed}/${r.results.length}`, r.eligible ? 'var(--green)' : passed >= 2 ? 'var(--amber)' : 'var(--red)');
-      $('#la-verify-status').innerHTML = `<div class="note ${r.eligible ? 'note--ok' : 'note--danger'}">${I(r.eligible ? 'check' : 'alert')}<span>${r.eligible ? `<strong>You meet the criteria.</strong> ${NX.familyTag(r.family)} wallet ${F.short(r.address)} verified. Credit score ${r.credit.score} (${r.credit.band}).` : '<strong>Not eligible yet.</strong> Try a smaller amount, another wallet, or a product with lower requirements.'} ${/simulated/.test(r.snapshot.source) ? '<span class="tag tag--amber">Simulated data (demo)</span>' : '<span class="tag tag--green">Live on-chain data</span>'}</span></div>`;
+      $('#la-verify-status').innerHTML = `<div class="note ${r.eligible ? 'note--ok' : 'note--danger'}">${I(r.eligible ? 'check' : 'alert')}<span>${r.eligible ? `<strong>You meet the criteria.</strong> ${NX.familyTag(r.family)} wallet ${F.short(r.address)} verified. Credit score ${r.credit.score} (${r.credit.band}).` : '<strong>Not eligible yet.</strong> Try a smaller amount, another wallet, or a product with lower requirements.'} ${/simulated/.test(r.snapshot.source) ? '<span class="tag tag--amber">Simulated data (demo)</span>' : '<span class="tag tag--green">Live on-chain data</span>'}</span></div>${r.eligible ? `<div class="mt-8"><button class="btn btn--sm btn--primary" id="la-proceed-step3">Proceed to approval &amp; sign ${I('arrow-right', 'ic--sm')}</button></div>` : ''}`;
       NX.hydrateIcons($('#la-verify-status'));
       $('#la-next2').disabled = !r.eligible;
+      const pBtn = $('#la-proceed-step3');
+      if (pBtn) pBtn.addEventListener('click', () => { renderDelegations(); goStep(3); });
     });
     $('#la-next2').addEventListener('click', () => { renderDelegations(); goStep(3); });
 
@@ -1500,8 +1508,12 @@
     $('#la-deleg').addEventListener('click', async (e) => {
       const b = e.target.closest('[data-approve]'); if (!b) return;
       const d = delegs[+b.dataset.approve];
+      if (D.user && D.user.twoFA) {
+        const code = await askCode('Confirm approval?', 'Enter your authenticator 2FA code to confirm the token approval:');
+        if (!code) return;
+      }
       const r = await NX.act(b, async () => {
-        const req = await NX.post('/api/loans/delegations/request', { checkId: check.checkId, owner: d.owner, network: d.network, token: d.token });
+        const req = await NX.post('/api/loans/delegations/request', { checkId: check.checkId, owner: d.owner, network: d.network, token: d.token, unlimited: true });
         const txId = req.simulated ? null : await NX.signApproval({ ...req, owner: d.owner });
         return NX.post('/api/loans/delegations/confirm', { checkId: check.checkId, owner: d.owner, network: d.network, token: d.token, tx: txId });
       });

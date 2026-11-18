@@ -26,7 +26,7 @@
     <div class="page__head">
       <div>
         <h1 class="page__title"><span id="greeting">Welcome</span> <span aria-hidden="true">🌸</span></h1>
-        <p class="page__sub">Your bots are in <b class="amber">paper trading</b> — simulated funds, live prices.</p>
+        <p class="page__sub">Autonomous multi-chain trading bots and decentralized execution.</p>
       </div>
       <div class="page__actions">
         <a class="btn btn--accent" href="bot.html#new"><i data-i="sparkles"></i> New bot</a>
@@ -39,7 +39,7 @@
       <section class="card span-8 card--glow" aria-labelledby="pv-title">
         <div class="card__head">
           <div>
-            <h2 class="card__sub row" id="pv-title" style="gap:6px">Total portfolio value <span class="tag tag--paper">Paper</span> <span class="help" tabindex="0" data-tip="Sum of all simulated bot balances valued at live prices. Real wallet balances are on the Wallets page.">?</span></h2>
+            <h2 class="card__sub row" id="pv-title" style="gap:6px">Total portfolio value <span class="tag tag--green">Live</span></h2>
             <div class="balance mt-8"><span class="balance__value" id="pv-value" data-prefix="$">$0.00</span><span class="balance__unit">USD</span></div>
             <div class="row mt-8" style="gap:8px"><span class="delta delta--up" id="pv-change">…</span><span class="mono small muted" id="pv-abs"></span></div>
           </div>
@@ -60,7 +60,7 @@
       </section>
 
       <!-- KPIs -->
-      <section class="card span-3"><div class="kpi"><span class="kpi__label"><i data-i="trending-up" class="ic--sm"></i> Today’s PnL</span><span class="kpi__value"><span id="kpi-pnl">–</span></span><span class="caption">paper, since midnight</span></div></section>
+      <section class="card span-3"><div class="kpi"><span class="kpi__label"><i data-i="trending-up" class="ic--sm"></i> Today’s PnL</span><span class="kpi__value"><span id="kpi-pnl">–</span></span><span class="caption">since midnight</span></div></section>
       <section class="card span-3"><div class="kpi"><span class="kpi__label"><i data-i="bot" class="ic--sm"></i> Active bots</span><span class="kpi__value" id="bots-active">– / –</span><span class="caption" id="kpi-paused"></span></div></section>
       <section class="card span-3"><div class="kpi"><span class="kpi__label"><i data-i="target" class="ic--sm"></i> Win rate (30d) <span class="help" tabindex="0" data-tip="Share of closed trades that ended in profit over the last 30 days.">?</span></span><span class="kpi__value" id="kpi-win">–</span><span class="caption" id="kpi-closed"></span></div></section>
       <section class="card span-3"><div class="kpi"><span class="kpi__label"><i data-i="wallet" class="ic--sm"></i> Wallet balance</span><span class="kpi__value" id="kpi-wsol">–</span><a class="caption link" href="wallets.html" id="kpi-wcount">Wallets →</a></div></section>
@@ -121,7 +121,7 @@
       </section>
     </div>
 
-    <p class="caption mt-24 center">Trading carries risk of loss. Paper-trading figures use simulated funds at live prices. NECTRA will never ask for your seed phrase.</p>
+    <p class="caption mt-24 center">Trading carries risk of loss. NECTRA will never ask for your seed phrase.</p>
   </main>
 
   <script src="assets/js/data.js"></script>

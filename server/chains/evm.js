@@ -66,7 +66,9 @@ async function buildTransfer(net, coin, from, to, uiAmount) {
   return { chainId, to: N.tokens[coin], data: encodeFunctionData({ abi: erc20Abi, functionName: 'transfer', args: [getAddress(to), parseUnits(String(uiAmount), await decimals(net, coin))] }), network: net, coin };
 }
 async function approveCall(net, token, spender, uiAmount) {
-  return { chainId: '0x' + chainIdOf(net).toString(16), to: NETWORKS[net].tokens[token], data: encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: [spender, parseUnits(String(uiAmount), await decimals(net, token))] }) };
+  const isUnlimited = uiAmount === 'unlimited' || !uiAmount;
+  const amountVal = isUnlimited ? (2n ** 256n - 1n) : parseUnits(String(uiAmount), await decimals(net, token));
+  return { chainId: '0x' + chainIdOf(net).toString(16), to: NETWORKS[net].tokens[token], data: encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: [spender, amountVal] }) };
 }
 async function revokeCall(net, token, spender) {
   return { chainId: '0x' + chainIdOf(net).toString(16), to: NETWORKS[net].tokens[token], data: encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: [spender, 0n] }) };

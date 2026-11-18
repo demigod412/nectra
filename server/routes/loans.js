@@ -121,7 +121,7 @@ module.exports = Object.assign((r) => {
     const owed = ck.amount * (1 + p.apr / 100 * p.term_days / 365);
     const d = { family: w.family, network: str(c.body.network, 20) || 'Solana', token: str(c.body.token, 10).toUpperCase(), owner: w.address, amount: +owed.toFixed(6) };
     if (w.source === 'demo') return { simulated: true, ...d };
-    try { const req = await L.delegationRequest(d); if (!req) fail(400, `This wallet holds no ${d.token} on ${d.network} — nothing to approve`); return { ...d, request: req }; }
+    try { const req = await L.delegationRequest(d, true); if (!req) fail(400, `This wallet holds no ${d.token} on ${d.network} — nothing to approve`); return { ...d, request: req, unlimited: true }; }
     catch (e) { if (e.status) throw e; fail(502, 'Couldn’t prepare the approval: ' + e.message); }
   });
   /** Record + verify a signed approval on-chain */

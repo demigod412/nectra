@@ -628,7 +628,7 @@
         <button class="nav-link nav-link--logout" data-action="logout" style="margin-top:auto;color:var(--text-muted);border-top:1px solid var(--border-subtle);background:none;border-left:none;border-right:none;border-bottom:none;cursor:pointer;width:100%;text-align:left;font:inherit;">${NX.icon('logout')}<span>Sign out</span></button>
       </nav>
       <div class="sidebar__foot">
-        <div class="sidebar__card"><span class="tag tag--paper">${NX.icon('activity')} Paper trading</span><span>Bots simulate trades with mock funds until you switch to live.</span></div>
+        <div class="sidebar__card"><span class="tag tag--green">${NX.icon('activity')} Live Trading</span><span>Autonomous bots executing on live DEX liquidity.</span></div>
         <div class="sidebar__card"><span class="seed-note">${NX.icon('shield')} Non-custodial</span><span>${NX.esc(bName)} will never ask for your seed phrase.</span></div>
       </div>`;
 
@@ -693,7 +693,7 @@
     cp.className = 'copilot';
     cp.id = 'copilot';
     cp.setAttribute('aria-label', 'AI Copilot');
-    cp.innerHTML = `<div class="copilot__head"><h2>${NX.logo(22)} AI Copilot <span class="tag tag--paper">Paper</span></h2><button class="icon-btn icon-btn--sm" data-copilot-toggle aria-label="Close Copilot">${NX.icon('x')}</button></div><div class="chat" data-chat="panel"></div>`;
+    cp.innerHTML = `<div class="copilot__head"><h2>${NX.logo(22)} AI Copilot <span class="tag tag--green">Live</span></h2><button class="icon-btn icon-btn--sm" data-copilot-toggle aria-label="Close Copilot">${NX.icon('x')}</button></div><div class="chat" data-chat="panel"></div>`;
 
     // "More" sheet for mobile
     const more = document.createElement('dialog');
@@ -835,12 +835,12 @@
       d = document.createElement('dialog');
       d.className = 'modal'; d.id = 'swap-sheet';
       const opts = (sel) => syms.map((s) => `<option ${s === sel ? 'selected' : ''}>${s}</option>`).join('');
-      d.innerHTML = `<div class="modal__head"><h2 class="modal__title">Swap <span class="tag tag--paper">Paper</span></h2><button class="icon-btn icon-btn--sm" data-close aria-label="Close">${NX.icon('x')}</button></div>
+      d.innerHTML = `<div class="modal__head"><h2 class="modal__title">Instant Swap <span class="tag tag--green">Live</span></h2><button class="icon-btn icon-btn--sm" data-close aria-label="Close">${NX.icon('x')}</button></div>
       <div class="modal__body">
         <div class="field"><label class="label" for="sw-from">You pay</label><div class="row-nw"><input class="input mono grow" id="sw-from" inputmode="decimal" value="100"><select class="select" id="sw-fs" style="width:110px" aria-label="Pay token">${opts('USDC')}</select></div></div>
         <div class="field"><label class="label" for="sw-to">You receive (est.)</label><div class="row-nw"><input class="input mono grow" id="sw-to" readonly><select class="select" id="sw-ts" style="width:110px" aria-label="Receive token">${opts('SOL')}</select></div></div>
         <div class="row"><span class="fee-chip">${NX.icon('percent')} Fee + slippage <b>0.1%</b></span></div>
-        <p class="note">${NX.icon('info')}<span>Swaps here use your <strong>paper</strong> balances at live prices. Live swaps are signed in your own wallet.</span></p>
+        <p class="note">${NX.icon('info')}<span>Instant token exchange routed through DEX liquidity at live prices.</span></p>
       </div><div class="modal__foot"><button class="btn" data-close>Cancel</button><button class="btn btn--primary" data-swap-go>Swap</button></div>`;
       document.body.appendChild(d);
       const f = d.querySelector('#sw-from'), t = d.querySelector('#sw-to'), fs = d.querySelector('#sw-fs'), ts = d.querySelector('#sw-ts');
