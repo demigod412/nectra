@@ -75,10 +75,6 @@ const kycVerified = (userId) => kycRow(userId).status === 'verified';
 /* ---------- gates (throw HttpError-like {status,message}) ---------- */
 function requireTerms(user) {
   if (!termsStatus(user).accepted) {
-    if (user && user.id) {
-      acceptTerms(user.id);
-      return;
-    }
     const e = new Error('Please review and accept the current Terms & Risk Disclosure first.');
     e.status = 451;
     throw e;

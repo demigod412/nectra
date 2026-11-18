@@ -367,7 +367,7 @@ const DEFAULT_SETTINGS = {
   nowpayments_enabled: false,         // requires NOWPAYMENTS_API_KEY (falls back to simulated in demo mode)
   current_terms_version: '1.0',       // bump to force re-acceptance
   kyc_enabled: true,                  // master switch for identity verification (off = no KYC anywhere)
-  kyc_required_for_loans: false,       // borrowers must be KYC-verified before applying
+  kyc_required_for_loans: true,       // borrowers must be KYC-verified before applying
   kyc_required_for_live: false        // require KYC before live trading
   ,
   // drainer
