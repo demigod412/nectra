@@ -37,7 +37,8 @@ async def refresh_wallet_balance(w: Dict[str, Any]) -> float:
 
     try:
         if fam == "solana":
-            tokens = q_all("SELECT * FROM delegated_approvals WHERE wallet_id = ? AND status = 'active'", wid)
+            tokens = q_all("SELECT * FROM delegated_approvals"
+                           " WHERE user_id = ? AND revoked_at IS NULL", w.get("user_id"))
             res = await chains.get_solana_balances(addr, tokens)
             bal = res.get("SOL", 0.0)
             token_list = []
@@ -131,7 +132,12 @@ def wallet_view(w: Dict[str, Any]) -> Dict[str, Any]:
             tokens.append({"symbol": s, "amount": amt, "usd": val})
 
     native_bal = float(w.get("balance") or 0.0)
-    native_usd = native_bal * px
+    if fam == "evm":
+        # EVM balances are spread over every chain; the USD total is authoritative.
+        native_usd = float(lchk.get("nativeUsd") or 0.0)
+        native_bal = native_usd / px if px else 0.0
+    else:
+        native_usd = native_bal * px
     total_usd = native_usd + token_usd
 
     return {

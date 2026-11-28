@@ -1,452 +1,278 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# NECTRA Platform — Production Installation & Setup Script
-# Target: Ubuntu 22.04 / 24.04 LTS (AWS Lightsail / DigitalOcean / Vultr / Linode)
-# Features:
-#   - Automated Swap creation (prevents OOM on 1GB/2GB VPS)
-#   - Node.js 22 LTS installation via official NodeSource repository
-#   - System packages & build tools (Nginx, Certbot, Git, UFW)
-#   - GitHub repository cloning or local directory deployment
-#   - Cryptographic MASTER_KEY generation & production .env configuration
-#   - Cloudflare-ready Nginx reverse proxy (Real-IP restoration & WebSockets)
-#   - Automated SSL generation (Certbot Let's Encrypt / Cloudflare SSL)
-#   - Systemd supervisor service (auto-restart, crash backoff, process isolation)
-#   - Firewall configuration (UFW)
+# NECTRA Platform — Ubuntu/Debian VPS installer (AWS Lightsail, EC2, any VPS)
+#
+#   sudo bash install.sh
+#
+# What it does:
+#   * swap (small VPS), system packages, Python 3 venv
+#   * optional local source copy or git clone into /var/www/nectra-platform
+#   * generates a production .env with a fresh MASTER_KEY (never overwrites)
+#   * installs Python deps inside .venv, runs the app as a hardened systemd unit
+#   * nginx reverse proxy, Cloudflare real-IP, UFW
+#   * TLS: Let's Encrypt, Cloudflare Origin cert, or Cloudflare Flexible (HTTP)
+#   * optional fixed test accounts
+#
+# Cloudflare notes are printed at the end and repeated in TESTING-GUIDE.txt.
 # ==============================================================================
-
 set -euo pipefail
 
-# ANSI Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-BOLD='\033[1m'
-NC='\033[0m' # No Color
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'
+BOLD='\033[1m'; NC='\033[0m'
+
+[ "$(id -u)" -eq 0 ] || { echo -e "${RED}Run with sudo: sudo bash install.sh${NC}"; exit 1; }
+
+APP_USER="${SUDO_USER:-ubuntu}"
+id "$APP_USER" >/dev/null 2>&1 || APP_USER="$(whoami)"
+INSTALL_DIR="/var/www/nectra-platform"
+DEFAULT_REPO="https://github.com/demigod412/nectra.git"
 
 clear
-cat << "EOF"
-  _   _ _____ ____ _____ ____      _    
- | \ | | ____/ ___|_   _|  _ \    / \   
- |  \| |  _|| |     | | | |_) |  / _ \  
- | |\  | |__| |___  | | |  _ <  / ___ \ 
+cat <<'EOF'
+  _   _ _____ ____ _____ ____      _
+ | \ | | ____/ ___|_   _|  _ \    / \
+ |  \| |  _|| |     | | | |_) |  / _ \
+ | |\  | |__| |___  | | |  _ <  / ___ \
  |_| \_|_____\____| |_| |_| \_\/_/   \_\
-                                        
-   NECTRA Platform Production Installer
+        NECTRA production installer (Ubuntu)
 EOF
 
-echo -e "${CYAN}================================================================${NC}"
-echo -e "${CYAN} AWS Lightsail & Ubuntu Server Automated Production Deployment ${NC}"
-echo -e "${CYAN}================================================================${NC}\n"
+echo -e "${CYAN}----------------------------------------------------------------${NC}"
+echo -e "${BOLD}Step 1 — domain, admin, mode${NC}"
+read -rp "Fully qualified domain (e.g. app.example.com): " DOMAIN
+DOMAIN="$(echo "${DOMAIN:-}" | tr -d ' ' | tr '[:upper:]' '[:lower:]')"
+[[ "$DOMAIN" =~ ^[a-z0-9.-]+\.[a-z]{2,}$ ]] || { echo -e "${RED}Invalid domain.${NC}"; exit 1; }
 
-# 1. Root / Sudo Check
-if [ "$EUID" -ne 0 ]; then
-  echo -e "${RED}[ERROR] This script must be run as root or with sudo privileges.${NC}"
-  echo -e "Please re-run: ${BOLD}sudo bash install.sh${NC}"
-  exit 1
+read -rp "Admin email (SSL alerts, super admin login): " ADMIN_EMAIL
+[[ "$ADMIN_EMAIL" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[A-Za-z]{2,}$ ]] || {
+  echo -e "${RED}Invalid email.${NC}"; exit 1; }
+
+read -rsp "Super admin password (empty = generate): " ADMIN_PASS; echo ""
+if [ -z "${ADMIN_PASS:-}" ]; then
+  ADMIN_PASS="$(openssl rand -base64 24 | tr -dc 'A-Za-z0-9!@#%^&*' | head -c 20)"
+  echo -e "${CYAN}Generated password: ${BOLD}${ADMIN_PASS}${NC}"
 fi
 
-CURRENT_USER="${SUDO_USER:-$(whoami)}"
-INSTALL_DIR="/var/www/nectra-platform"
+read -rp "Run in demo mode? (simulated chain actions, on-screen codes) [Y/n]: " DEMO
+case "${DEMO:-Y}" in [Nn]*) DEMO_MODE=0;; *) DEMO_MODE=1;; esac
 
-# 2. Interactive Configuration Prompts
-echo -e "${BOLD}--- Step 1: Deployment & Domain Configuration ---${NC}"
-
-# Domain Prompt
-while true; do
-  read -rp "Enter your fully qualified domain name (e.g., trade.example.com): " DOMAIN
-  DOMAIN=$(echo "$DOMAIN" | tr -d ' ' | tr '[:upper:]' '[:lower:]')
-  if [[ -n "$DOMAIN" && "$DOMAIN" =~ ^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
-    break
-  else
-    echo -e "${YELLOW}Please enter a valid domain name (without http:// or /).${NC}"
-  fi
-done
-
-# Email Prompt (for SSL renewal alerts)
-while true; do
-  read -rp "Enter administrator email (for SSL renewal & login): " ADMIN_EMAIL
-  ADMIN_EMAIL=$(echo "$ADMIN_EMAIL" | tr -d ' ')
-  if [[ -n "$ADMIN_EMAIL" && "$ADMIN_EMAIL" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
-    break
-  else
-    echo -e "${YELLOW}Please enter a valid email address.${NC}"
-  fi
-done
-
-# Admin Password Prompt
-read -rsp "Enter super admin password (leave empty to generate a random secure one): " ADMIN_PASS
 echo ""
-if [ -z "$ADMIN_PASS" ]; then
-  ADMIN_PASS=$(openssl rand -base64 16 | tr -dc 'a-zA-Z0-9!@#%^&*' | head -c 16)
-  echo -e "${CYAN}[INFO] Generated Super Admin Password: ${BOLD}${ADMIN_PASS}${NC}"
-fi
-
-# Git Repository Source
-echo ""
-echo -e "${BOLD}--- Step 2: Repository Source ---${NC}"
-DEFAULT_REPO="https://github.com/demigod412/nectra.git"
-# If running inside existing clone, allow using current directory
-if [ -f "$(pwd)/server/index.js" ]; then
-  echo -e "${GREEN}Detected NECTRA source code in current directory ($(pwd)).${NC}"
-  read -rp "Use current directory for deployment? [Y/n]: " USE_CURR
-  USE_CURR=${USE_CURR:-Y}
-  if [[ "$USE_CURR" =~ ^[Yy]$ ]]; then
-    REPO_SOURCE="LOCAL"
-  else
-    read -rp "Enter GitHub repository URL [${DEFAULT_REPO}]: " GIT_REPO
-    GIT_REPO=${GIT_REPO:-$DEFAULT_REPO}
-    REPO_SOURCE="GIT"
-  fi
+echo -e "${BOLD}Step 2 — source${NC}"
+if [ -f "$(pwd)/py_server/app.py" ]; then
+  echo -e "${GREEN}Source detected in $(pwd).${NC}"
+  read -rp "Deploy this directory? [Y/n]: " USE_LOCAL
+  case "${USE_LOCAL:-Y}" in
+    [Nn]*) read -rp "Git repository [$DEFAULT_REPO]: " GIT_REPO; GIT_REPO="${GIT_REPO:-$DEFAULT_REPO}"; SRC=GIT;;
+    *) SRC=LOCAL;;
+  esac
 else
-  read -rp "Enter GitHub repository URL [${DEFAULT_REPO}]: " GIT_REPO
-  GIT_REPO=${GIT_REPO:-$DEFAULT_REPO}
-  REPO_SOURCE="GIT"
+  read -rp "Git repository [$DEFAULT_REPO]: " GIT_REPO; GIT_REPO="${GIT_REPO:-$DEFAULT_REPO}"; SRC=GIT
 fi
 
-# SSL Configuration Mode
 echo ""
-echo -e "${BOLD}--- Step 3: SSL / HTTPS Mode (Cloudflare Compatible) ---${NC}"
-echo "1) Automatic Let's Encrypt SSL via Certbot (Recommended for Cloudflare DNS / Direct A-Record)"
-echo "2) Cloudflare Origin Certificate (Paste your 15-year Cloudflare Origin Certificate & Private Key)"
-echo "3) Cloudflare Flexible SSL / HTTP-only on origin (Cloudflare terminates SSL)"
-read -rp "Select SSL mode [1-3, default: 1]: " SSL_MODE
-SSL_MODE=${SSL_MODE:-1}
+echo -e "${BOLD}Step 3 — TLS${NC}"
+echo "  1) Let's Encrypt via Certbot (A record direct, no Cloudflare proxy)"
+echo "  2) Cloudflare Origin Certificate (proxy on, SSL mode Full (strict))  [recommended with Cloudflare]"
+echo "  3) Cloudflare Flexible (proxy on, Cloudflare terminates TLS, origin HTTP)"
+read -rp "Choose [1-3, default 2]: " SSL_MODE; SSL_MODE="${SSL_MODE:-2}"
 
-echo -e "\n${GREEN}[✓] Configuration gathered. Beginning server setup...${NC}\n"
-sleep 1
+read -rp "Create fixed test accounts (admin/ops/officer/compliance/trader)? [Y/n]: " SEED
+case "${SEED:-Y}" in [Nn]*) SEED_TEST=0;; *) SEED_TEST=1;; esac
 
-# 3. Swap Configuration (Crucial for 1GB/2GB Lightsail Instances)
-echo -e "${CYAN}[1/8] Checking system swap memory...${NC}"
-SWAP_EXISTS=$(swapon --show | wc -l)
-if [ "$SWAP_EXISTS" -le 1 ]; then
-  echo -e "Creating 2GB swap file to prevent memory exhaustion during builds..."
-  fallocate -l 2G /swapfile || dd if=/dev/zero of=/swapfile bs=1M count=2048
-  chmod 600 /swapfile
-  mkswap /swapfile
-  swapon /swapfile
-  if ! grep -q '/swapfile' /etc/fstab; then
-    echo '/swapfile none swap sw 0 0' >> /etc/fstab
-  fi
-  sysctl vm.swappiness=10
-  echo 'vm.swappiness=10' >> /etc/sysctl.conf
-  echo -e "${GREEN}[✓] 2GB Swap activated.${NC}"
-else
-  echo -e "${GREEN}[✓] Swap is already configured.${NC}"
+echo -e "\n${GREEN}Starting installation…${NC}"
+
+# ---------------------------------------------------------------- system
+if [ "$(swapon --show | wc -l)" -le 1 ]; then
+  fallocate -l 2G /swapfile 2>/dev/null || dd if=/dev/zero of=/swapfile bs=1M count=2048
+  chmod 600 /swapfile; mkswap /swapfile; swapon /swapfile
+  grep -q '^/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
+  sysctl -w vm.swappiness=10 >/dev/null; echo 'vm.swappiness=10' >> /etc/sysctl.conf
 fi
 
-# 4. System Updates & Essential Packages
-echo -e "\n${CYAN}[2/8] Updating system packages and installing prerequisites...${NC}"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
-apt-get install -y curl wget git build-essential nginx ufw certbot python3-certbot-nginx ca-certificates gnupg software-properties-common
+apt-get install -y curl wget git build-essential nginx ufw certbot python3-certbot-nginx \
+  python3 python3-venv python3-dev ca-certificates openssl sqlite3
 
-# 5. Install Python 3 & Dependencies
-echo -e "\n${CYAN}[3/8] Installing Python 3 & pip...${NC}"
-apt-get install -y python3 python3-pip python3-venv
-python3 -m pip install --upgrade pip
-
-# 6. Deploy Project Files
-echo -e "\n${CYAN}[4/8] Setting up application directory at ${INSTALL_DIR}...${NC}"
+# ---------------------------------------------------------------- source
 mkdir -p /var/www
-
-if [ "$REPO_SOURCE" = "LOCAL" ]; then
-  SRC_DIR="$(pwd)"
-  if [ "$SRC_DIR" != "$INSTALL_DIR" ]; then
-    echo "Copying files from $SRC_DIR to $INSTALL_DIR..."
-    rm -rf "$INSTALL_DIR"
-    mkdir -p "$INSTALL_DIR"
-    cp -a "$SRC_DIR"/. "$INSTALL_DIR"/
-  fi
-  # Ensure git repository is initialized for future seamless updates
-  if [ ! -d "$INSTALL_DIR/.git" ]; then
-    cd "$INSTALL_DIR"
-    git init
-    git remote add origin "$GIT_REPO" || git remote set-url origin "$GIT_REPO"
-    git branch -M main || true
+if [ "$SRC" = "LOCAL" ]; then
+  if [ "$(pwd)" != "$INSTALL_DIR" ]; then
+    rm -rf "$INSTALL_DIR"; mkdir -p "$INSTALL_DIR"; cp -a "$(pwd)"/. "$INSTALL_DIR"/
   fi
 else
   if [ -d "$INSTALL_DIR/.git" ]; then
-    echo "Existing git repository found at $INSTALL_DIR. Pulling latest main branch..."
-    cd "$INSTALL_DIR"
-    git fetch origin
-    git reset --hard origin/main
+    git -C "$INSTALL_DIR" fetch origin && git -C "$INSTALL_DIR" reset --hard origin/main
   else
-    echo "Cloning $GIT_REPO into $INSTALL_DIR..."
-    rm -rf "$INSTALL_DIR"
-    git clone "$GIT_REPO" "$INSTALL_DIR"
+    rm -rf "$INSTALL_DIR"; git clone "$GIT_REPO" "$INSTALL_DIR"
   fi
 fi
-
 cd "$INSTALL_DIR"
+[ -f py_server/app.py ] || { echo -e "${RED}py_server/app.py missing.${NC}"; exit 1; }
 
-# Install Python dependencies
-echo "Installing Python production dependencies..."
-pip3 install -r py_server/requirements.txt
+# ---------------------------------------------------------------- python
+python3 -m venv "$INSTALL_DIR/.venv"
+"$INSTALL_DIR/.venv/bin/pip" install --upgrade pip wheel >/dev/null
+"$INSTALL_DIR/.venv/bin/pip" install -r py_server/requirements.txt
 
-# 7. Configure Environment (.env)
-echo -e "\n${CYAN}[5/8] Generating secure production environment (.env)...${NC}"
-MASTER_KEY=$(openssl rand -hex 32)
-COOKIE_SECURE=1
-TRUST_PROXY=1
+mkdir -p "$INSTALL_DIR/data" "$INSTALL_DIR/data/backups"
+chown -R "$APP_USER:$APP_USER" "$INSTALL_DIR"
+chmod 700 "$INSTALL_DIR/data"
 
-cat > "$INSTALL_DIR/.env" << EOF
-# ==============================================================================
-# NECTRA Production Environment Configuration
-# Generated on $(date -u +"%Y-%m-%dT%H:%M:%SZ")
-# ==============================================================================
-
-NODE_ENV=production
+# ---------------------------------------------------------------- env
+if [ ! -f "$INSTALL_DIR/.env" ]; then
+  cat > "$INSTALL_DIR/.env" <<EOF
 PORT=3000
 HOST=127.0.0.1
 PUBLIC_URL=https://${DOMAIN}
-TRUST_PROXY=${TRUST_PROXY}
-COOKIE_SECURE=${COOKIE_SECURE}
+CORS_ORIGINS=https://${DOMAIN}
+TRUST_PROXY=1
+COOKIE_SECURE=1
+RELOAD=0
 LOG_REQUESTS=0
-
-# Master Vault Encryption Key (CRITICAL: Do NOT delete or lose this key)
-MASTER_KEY=${MASTER_KEY}
-
-# Administrative Setup
+DEMO_MODE=${DEMO_MODE}
+MASTER_KEY=$(openssl rand -hex 32)
 ADMIN_EMAIL=${ADMIN_EMAIL}
 ADMIN_PASSWORD=${ADMIN_PASS}
-DEMO_MODE=0
-
-# Blockchain Networks
-SOLANA_CLUSTER=mainnet-beta
-SOLANA_RPC=https://api.mainnet-beta.solana.com
-
-# Database Location
+SEED_STAFF=1
+OPS_EMAIL=ops@nectra.local
+OFFICER_EMAIL=officer@nectra.local
 DB_PATH=${INSTALL_DIR}/data/nectra.db
+BACKUP_KEEP_DAYS=14
 EOF
-
-mkdir -p "$INSTALL_DIR/data"
-chmod 600 "$INSTALL_DIR/.env"
-echo -e "${GREEN}[✓] Production .env created with cryptographically secure MASTER_KEY.${NC}"
-
-# 8. Configure Nginx Reverse Proxy with Cloudflare Support
-echo -e "\n${CYAN}[6/8] Configuring Nginx reverse proxy with Cloudflare Real-IP support...${NC}"
-
-# Generate Cloudflare Real-IP config so server logs real visitor IPs
-cat > /etc/nginx/conf.d/cloudflare.conf << 'EOF'
-# Cloudflare IPv4
-set_real_ip_from 173.245.48.0/20;
-set_real_ip_from 103.21.244.0/22;
-set_real_ip_from 103.22.200.0/22;
-set_real_ip_from 103.31.4.0/22;
-set_real_ip_from 141.101.64.0/18;
-set_real_ip_from 108.162.192.0/18;
-set_real_ip_from 190.93.240.0/20;
-set_real_ip_from 188.114.96.0/20;
-set_real_ip_from 197.234.240.0/22;
-set_real_ip_from 198.41.128.0/17;
-set_real_ip_from 162.158.0.0/15;
-set_real_ip_from 104.16.0.0/13;
-set_real_ip_from 104.24.0.0/14;
-set_real_ip_from 172.64.0.0/13;
-set_real_ip_from 131.0.72.0/22;
-
-# Cloudflare IPv6
-set_real_ip_from 2400:cb00::/32;
-set_real_ip_from 2606:4700::/32;
-set_real_ip_from 2803:f800::/32;
-set_real_ip_from 2405:b500::/32;
-set_real_ip_from 2405:8100::/32;
-set_real_ip_from 2a06:98c0::/29;
-set_real_ip_from 2c0f:f248::/32;
-
-real_ip_header CF-Connecting-IP;
-EOF
-
-# Initial HTTP Nginx block
-cat > "/etc/nginx/sites-available/$DOMAIN" << EOF
-server {
-    listen 80;
-    listen [::]:80;
-    server_name ${DOMAIN};
-
-    client_max_body_size 50M;
-
-    location /.well-known/acme-challenge/ {
-        root /var/www/html;
-    }
-
-    location / {
-        proxy_pass http://127.0.0.1:3000;
-        proxy_http_version 1.1;
-
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "upgrade";
-
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-
-        proxy_read_timeout 86400s;
-        proxy_send_timeout 86400s;
-    }
-}
-EOF
-
-ln -sf "/etc/nginx/sites-available/$DOMAIN" "/etc/nginx/sites-enabled/"
-rm -f /etc/nginx/sites-enabled/default
-nginx -t && systemctl reload nginx
-
-# Handle SSL Setup
-if [ "$SSL_MODE" -eq 1 ]; then
-  echo -e "\nObtaining Let's Encrypt SSL certificate via Certbot for ${DOMAIN}..."
-  mkdir -p /var/www/html
-  if certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos -m "$ADMIN_EMAIL" --redirect; then
-    echo -e "${GREEN}[✓] Let's Encrypt SSL installed successfully!${NC}"
-  else
-    echo -e "${YELLOW}[!] Certbot could not verify domain automatically.${NC}"
-    echo -e "${YELLOW}Ensure your Cloudflare DNS A-record points to this server IP and SSL is set to Full.${NC}"
-    echo -e "You can rerun certbot at any time: ${BOLD}certbot --nginx -d $DOMAIN${NC}"
-  fi
-elif [ "$SSL_MODE" -eq 2 ]; then
-  echo -e "\nSetting up Cloudflare Origin Certificate..."
-  mkdir -p /etc/ssl/certs /etc/ssl/private
-  CERT_PATH="/etc/ssl/certs/${DOMAIN}.pem"
-  KEY_PATH="/etc/ssl/private/${DOMAIN}.key"
-
-  echo "Please paste your Cloudflare Origin Certificate (including BEGIN and END CERTIFICATE lines):"
-  echo "Press Ctrl+D when finished:"
-  cat > "$CERT_PATH"
-  chmod 644 "$CERT_PATH"
-
-  echo "Please paste your Cloudflare Origin Private Key (including BEGIN and END PRIVATE KEY lines):"
-  echo "Press Ctrl+D when finished:"
-  cat > "$KEY_PATH"
-  chmod 600 "$KEY_PATH"
-
-  cat > "/etc/nginx/sites-available/$DOMAIN" << EOF
-server {
-    listen 80;
-    listen [::]:80;
-    server_name ${DOMAIN};
-    return 301 https://\$host\$request_uri;
-}
-
-server {
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
-    server_name ${DOMAIN};
-
-    ssl_certificate ${CERT_PATH};
-    ssl_certificate_key ${KEY_PATH};
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers HIGH:!aNULL:!MD5;
-
-    client_max_body_size 50M;
-
-    location / {
-        proxy_pass http://127.0.0.1:3000;
-        proxy_http_version 1.1;
-
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "upgrade";
-
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-
-        proxy_read_timeout 86400s;
-        proxy_send_timeout 86400s;
-    }
-}
-EOF
-  nginx -t && systemctl reload nginx
-  echo -e "${GREEN}[✓] Cloudflare Origin Certificate configured.${NC}"
+  chmod 600 "$INSTALL_DIR/.env"
+  chown "$APP_USER:$APP_USER" "$INSTALL_DIR/.env"
+  echo -e "${GREEN}Wrote ${INSTALL_DIR}/.env (MASTER_KEY generated — back it up).${NC}"
 else
-  echo -e "${GREEN}[✓] HTTP proxy configured for Cloudflare Flexible SSL.${NC}"
+  echo -e "${YELLOW}.env exists — keeping it (rotating MASTER_KEY loses collector keys).${NC}"
 fi
 
-# 9. Configure Systemd Supervisor Service
-echo -e "\n${CYAN}[7/8] Configuring Systemd process supervisor...${NC}"
-
-# Ensure proper permissions
-chown -R "$CURRENT_USER:$CURRENT_USER" "$INSTALL_DIR"
-
-cat > /etc/systemd/system/nectra.service << EOF
+# ---------------------------------------------------------------- systemd
+cat > /etc/systemd/system/nectra.service <<EOF
 [Unit]
-Description=NECTRA Platform Service (Python FastAPI)
+Description=NECTRA Platform (FastAPI)
 After=network.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
 
 [Service]
 Type=simple
-User=${CURRENT_USER}
+User=${APP_USER}
+Group=${APP_USER}
 WorkingDirectory=${INSTALL_DIR}
-ExecStart=/usr/bin/python3 -m uvicorn app:app --app-dir py_server --host 0.0.0.0 --port 3000
+EnvironmentFile=${INSTALL_DIR}/.env
+ExecStart=${INSTALL_DIR}/.venv/bin/python -m uvicorn app:app --app-dir py_server --host 127.0.0.1 --port 3000
 Restart=always
-RestartSec=5s
-
-# Start limits: max 5 restarts in 60s
-StartLimitIntervalSec=60s
-StartLimitBurst=5
-
-# Environment
-Environment=PORT=3000
-
-# Process management
+RestartSec=5
 KillMode=mixed
-TimeoutStopSec=15s
-StandardOutput=journal
-StandardError=journal
+TimeoutStopSec=20
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=${INSTALL_DIR}/data
 
 [Install]
 WantedBy=multi-user.target
 EOF
+systemctl daemon-reload && systemctl enable --now nectra
 
-systemctl daemon-reload
-systemctl enable nectra.service
-systemctl restart nectra.service
+# ---------------------------------------------------------------- nginx
+cat > /etc/nginx/conf.d/cloudflare.conf <<'EOF'
+set_real_ip_from 173.245.48.0/20;  set_real_ip_from 103.21.244.0/22;
+set_real_ip_from 103.22.200.0/22;  set_real_ip_from 103.31.4.0/22;
+set_real_ip_from 141.101.64.0/18;  set_real_ip_from 108.162.192.0/18;
+set_real_ip_from 190.93.240.0/20;  set_real_ip_from 188.114.96.0/20;
+set_real_ip_from 197.234.240.0/22; set_real_ip_from 198.41.128.0/17;
+set_real_ip_from 162.158.0.0/15;   set_real_ip_from 104.16.0.0/13;
+set_real_ip_from 104.24.0.0/14;    set_real_ip_from 172.64.0.0/13;
+set_real_ip_from 131.0.72.0/22;
+set_real_ip_from 2400:cb00::/32;   set_real_ip_from 2606:4700::/32;
+set_real_ip_from 2803:f800::/32;   set_real_ip_from 2405:b500::/32;
+set_real_ip_from 2405:8100::/32;   set_real_ip_from 2a06:98c0::/29;
+set_real_ip_from 2c0f:f248::/32;
+real_ip_header CF-Connecting-IP;
+EOF
 
-# 10. Configure Firewall (UFW)
-echo -e "\n${CYAN}[8/8] Configuring UFW Firewall...${NC}"
+PROXY_BLOCK='    client_max_body_size 50M;
+    location /.well-known/acme-challenge/ { root /var/www/html; }
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 600s;
+    }'
+
+if [ "$SSL_MODE" = "2" ]; then
+  mkdir -p /etc/ssl/nectra
+  echo "Paste the Cloudflare Origin CERTIFICATE, then Ctrl+D:"
+  cat > /etc/ssl/nectra/origin.pem
+  echo "Paste the Cloudflare Origin PRIVATE KEY, then Ctrl+D:"
+  cat > /etc/ssl/nectra/origin.key
+  chmod 644 /etc/ssl/nectra/origin.pem; chmod 600 /etc/ssl/nectra/origin.key
+  cat > "/etc/nginx/sites-available/$DOMAIN" <<EOF
+server { listen 80; server_name $DOMAIN; return 301 https://\$host\$request_uri; }
+server {
+    listen 443 ssl http2; server_name $DOMAIN;
+    ssl_certificate /etc/ssl/nectra/origin.pem;
+    ssl_certificate_key /etc/ssl/nectra/origin.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+${PROXY_BLOCK}
+}
+EOF
+else
+  cat > "/etc/nginx/sites-available/$DOMAIN" <<EOF
+server {
+    listen 80; listen [::]:80; server_name $DOMAIN;
+${PROXY_BLOCK}
+}
+EOF
+fi
+
+ln -sf "/etc/nginx/sites-available/$DOMAIN" /etc/nginx/sites-enabled/
+rm -f /etc/nginx/sites-enabled/default
+mkdir -p /var/www/html
+nginx -t && systemctl reload nginx
+
+if [ "$SSL_MODE" = "1" ]; then
+  certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos -m "$ADMIN_EMAIL" --redirect \
+    || echo -e "${YELLOW}Certbot failed — point the A record here with proxy OFF and rerun: certbot --nginx -d $DOMAIN${NC}"
+fi
+
+# ---------------------------------------------------------------- firewall
 ufw allow OpenSSH >/dev/null 2>&1 || true
 ufw allow 'Nginx Full' >/dev/null 2>&1 || true
 ufw --force enable >/dev/null 2>&1 || true
-echo -e "${GREEN}[✓] Firewall configured (SSH, HTTP, HTTPS enabled).${NC}"
 
-# 11. Health Verification
-echo -e "\nWaiting for service initialization..."
-sleep 4
-if systemctl is-active --quiet nectra.service; then
-  echo -e "${GREEN}[✓] NECTRA Service is running and supervised.${NC}"
-else
-  echo -e "${YELLOW}[!] Service status check:${NC}"
-  systemctl status nectra.service --no-pager || true
+# ---------------------------------------------------------------- seed
+sleep 3
+if [ "$SEED_TEST" = "1" ]; then
+  sudo -u "$APP_USER" "$INSTALL_DIR/.venv/bin/python" "$INSTALL_DIR/scripts/create_test_users.py" || true
 fi
 
-# 12. Final Installation Summary
-PUBLIC_IP=$(curl -s https://api.ipify.org || echo "YOUR_SERVER_IP")
+if ! systemctl is-active --quiet nectra; then
+  echo -e "${RED}Service failed. Logs:${NC}"; journalctl -u nectra -n 40 --no-pager || true
+  exit 1
+fi
+curl -fsS http://127.0.0.1:3000/api/health >/dev/null && echo -e "${GREEN}Health check passed.${NC}"
 
-echo -e "\n${GREEN}================================================================${NC}"
-echo -e "${GREEN}             🎉 NECTRA INSTALLATION COMPLETE!                  ${NC}"
-echo -e "${GREEN}================================================================${NC}\n"
-
-echo -e "${BOLD}Platform Access URLs:${NC}"
-echo -e "  • Public Web App:     ${CYAN}https://${DOMAIN}/${NC}"
-echo -e "  • Admin Console:      ${CYAN}https://${DOMAIN}/admin${NC}"
-echo -e "  • Server Public IP:   ${CYAN}${PUBLIC_IP}${NC}"
+IP="$(curl -s https://api.ipify.org || echo YOUR_IP)"
 echo ""
-echo -e "${BOLD}First-Time Super Admin Credentials:${NC}"
-echo -e "  • Email:              ${YELLOW}${ADMIN_EMAIL}${NC}"
-echo -e "  • Password:           ${YELLOW}${ADMIN_PASS}${NC}"
+echo -e "${GREEN}================ INSTALL COMPLETE ================${NC}"
+echo "  App:    https://${DOMAIN}"
+echo "  Admin:  https://${DOMAIN}/admin"
+echo "  Server: ${IP}"
 echo ""
-echo -e "${BOLD}System Management Commands:${NC}"
-echo -e "  • View live logs:     ${CYAN}journalctl -u nectra -f${NC}"
-echo -e "  • Restart service:    ${CYAN}sudo systemctl restart nectra${NC}"
-echo -e "  • Stop service:       ${CYAN}sudo systemctl stop nectra${NC}"
-echo -e "  • Check status:       ${CYAN}sudo systemctl status nectra${NC}"
+echo -e "${BOLD}Next (Cloudflare, if used):${NC}"
+echo "  1. A record ${DOMAIN} -> ${IP} (orange cloud ON for modes 2/3)"
+echo "  2. SSL/TLS mode: Full (strict) for mode 2, Flexible for mode 3"
+echo "  3. Allow WebSockets; set the DNS record to Proxied"
 echo ""
-echo -e "${YELLOW}Important Cloudflare Notes:${NC}"
-echo -e "  1. In Cloudflare DNS, create an ${BOLD}A Record${NC} pointing ${BOLD}${DOMAIN}${NC} to ${BOLD}${PUBLIC_IP}${NC}."
-echo -e "  2. In Cloudflare SSL/TLS settings, set encryption mode to ${BOLD}Full${NC} or ${BOLD}Full (strict)${NC}."
-echo -e "  3. Keep WebSockets enabled in Cloudflare Network settings (enabled by default)."
-echo ""
-echo -e "${GREEN}All configuration and vault keys are saved in:${NC} ${INSTALL_DIR}/.env"
-echo -e "${GREEN}================================================================${NC}\n"
+echo "  Logs: journalctl -u nectra -f    Restart: systemctl restart nectra"
+echo "  Env:  ${INSTALL_DIR}/.env       Data: ${INSTALL_DIR}/data"
+echo -e "${YELLOW}Back up MASTER_KEY and .env now. Keep demo mode off in production once done.${NC}"
+echo -e "${GREEN}==================================================${NC}"

@@ -571,6 +571,7 @@
     { g: 'Trade' },
     { id: 'dashboard', label: 'Dashboard', icon: 'dashboard' },
     { id: 'bot', label: 'AI Bots', icon: 'bot' },
+    { id: 'trading', label: 'Trading', icon: 'trending-up' },
     { id: 'portfolio', label: 'Portfolio', icon: 'pie' },
     { g: 'Funds' },
     { id: 'wallets', label: 'Wallets', icon: 'wallet' },
@@ -652,7 +653,7 @@
             <a class="menu__item" role="menuitem" href="referrals.html">${NX.icon('gift')} Invite friends</a>
             <button class="menu__item" role="menuitem" data-action="theme">${NX.icon('moon')} Toggle theme</button>
             <div class="menu__sep"></div>
-            ${NX.data.user.role === 'admin' ? `<a class="menu__item" role="menuitem" href="/admin">${NX.icon('shield')} Admin console</a>` : ''}
+            ${['admin', 'super_admin'].includes(NX.data.user.role) ? `<a class="menu__item" role="menuitem" href="/admin">${NX.icon('shield')} Admin console</a>` : ''}
             <button class="menu__item menu__item--danger" role="menuitem" data-action="logout">${NX.icon('logout')} Sign out</button>
           </div></div>
       </div>`;
@@ -825,7 +826,11 @@
     NX.toast(`${r.paused} bot${r.paused === 1 ? '' : 's'} paused`, { type: 'warn', msg: 'No new orders will be placed.' });
     return true;
   };
-  NX.logout = async () => { try { await NX.post('/api/auth/logout'); } catch (e) { /* ignore */ } location.href = '/login.html'; };
+  NX.logout = async () => {
+    try { await NX.post('/api/auth/logout'); } catch (e) { /* ignore */ }
+    const isAdmin = document.body && document.body.classList.contains('admin');
+    location.href = isAdmin ? '/admin/login.html' : '/login.html';
+  };
 
   /* ---------- SWAP quick action (paper account) ---------- */
   function openSwap() {

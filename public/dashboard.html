@@ -65,6 +65,21 @@
       <section class="card span-3"><div class="kpi"><span class="kpi__label"><i data-i="target" class="ic--sm"></i> Win rate (30d) <span class="help" tabindex="0" data-tip="Share of closed trades that ended in profit over the last 30 days.">?</span></span><span class="kpi__value" id="kpi-win">–</span><span class="caption" id="kpi-closed"></span></div></section>
       <section class="card span-3"><div class="kpi"><span class="kpi__label"><i data-i="wallet" class="ic--sm"></i> Wallet balance</span><span class="kpi__value" id="kpi-wsol">–</span><a class="caption link" href="wallets.html" id="kpi-wcount">Wallets →</a></div></section>
 
+      <!-- Trading account -->
+      <section class="card span-12" aria-labelledby="desk-title">
+        <div class="card__head"><h2 class="card__title" id="desk-title">Trading account</h2>
+          <a class="btn btn--sm btn--ghost" href="trading.html">Full history</a></div>
+        <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px">
+          <div class="metric"><div class="kpi__label">Balance</div><div class="kpi__value mono" id="desk-balance">$0.00</div></div>
+          <div class="metric"><div class="kpi__label">Plan</div><div class="kpi__value" id="desk-plan">—</div></div>
+          <div class="metric"><div class="kpi__label">Today’s target</div><div class="kpi__value mono" id="desk-target">—</div></div>
+          <div class="metric"><div class="kpi__label">Trades left</div><div class="kpi__value mono" id="desk-left">—</div></div>
+          <div class="metric"><div class="kpi__label">P&L today</div><div class="kpi__value mono" id="desk-pnl">$0.00</div></div>
+          <div class="metric"><div class="kpi__label">Win rate today</div><div class="kpi__value mono" id="desk-win">0%</div></div>
+          <div class="metric"><div class="kpi__label">Trades total</div><div class="kpi__value mono" id="desk-trades">0</div></div>
+        </div>
+      </section>
+
       <!-- Active bots -->
       <section class="card span-7" aria-labelledby="bots-title">
         <div class="card__head"><h2 class="card__title" id="bots-title"><i data-i="bot"></i> Active bots</h2><div class="row" style="gap:8px"><button class="btn btn--sm btn--danger-outline" data-action="kill"><i data-i="pause" class="ic--sm"></i> Pause all</button><a class="btn btn--sm" href="bot.html">Manage</a></div></div>
@@ -93,7 +108,7 @@
           <thead><tr><th>Pair</th><th>Time</th><th>Side</th><th class="r">Size</th><th class="r">Price</th><th class="r">PnL</th></tr></thead>
           <tbody id="trades-body"></tbody>
         </table></div>
-        <div class="card__foot"><a class="btn btn--sm btn--ghost" href="portfolio.html#history">View full history <i data-i="arrow-right" class="ic--sm"></i></a></div>
+        <div class="card__foot"><a class="btn btn--sm btn--ghost" href="trading.html">View full history <i data-i="arrow-right" class="ic--sm"></i></a></div>
       </section>
 
       <!-- Risk meter -->

@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Admin Login · NECTRA</title>
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="description" content="NECTRA Administrator Portal Sign In">
+  <meta name="theme-color" content="#0A0A0C">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png">
+  <script>try{var t=localStorage.getItem('nx-theme');if(t)document.documentElement.dataset.theme=JSON.parse(t)}catch(e){}</script>
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="../assets/css/nectra.css">
+  <style>
+    .adm-badge { font: 700 10px var(--font-ui); letter-spacing: .12em; text-transform: uppercase; color: var(--pink); border: 1px solid rgba(242,85,154,.35); border-radius: 6px; padding: 2px 6px; margin-left: 8px; vertical-align: middle; }
+    .auth__card { max-width: 440px; margin: 0 auto; }
+  </style>
+</head>
+<body data-page="admin-login">
+  <div class="aurora" aria-hidden="true"></div>
+  <div class="auth">
+    <header class="pubnav"><div class="container pubnav__in">
+      <a class="brand" href="index.html" aria-label="NECTRA Admin"><span data-logo="30"></span><span class="brand__name">NECTRA</span> <span class="adm-badge">Admin</span></a>
+      <a class="btn btn--ghost btn--sm" href="../login.html"><i data-i="arrow-left"></i> Trader app</a>
+    </div></header>
+
+    <main id="main" class="auth__main">
+      <section class="card auth__card" aria-live="polite">
+        <!-- Admin Email / Password Step -->
+        <div class="step is-active" id="step-admin-login">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
+            <span data-logo="36" class="logo--breathe"></span>
+            <span class="adm-badge" style="font-size:11px;padding:3px 8px">Staff Portal</span>
+          </div>
+          <h1 class="auth__title">Admin Sign In</h1>
+          <p class="auth__lead">Enter your administrator credentials to access the console.</p>
+
+          <form id="admin-login-form" class="stack" novalidate>
+            <div class="note note--danger" id="admin-login-error" hidden style="display:none"><i data-i="alert"></i><span></span></div>
+            <div class="field">
+              <label class="label" for="admin-email">Admin Email</label>
+              <input class="input" id="admin-email" type="email" autocomplete="username" placeholder="admin@nectra.local" required autofocus>
+            </div>
+            <div class="field">
+              <label class="label" for="admin-pw">Password</label>
+              <div class="input-wrap">
+                <input class="input" id="admin-pw" type="password" autocomplete="current-password" placeholder="••••••••••••" required>
+                <div class="input-wrap__end">
+                  <button class="icon-btn icon-btn--sm" type="button" id="toggle-pw" aria-label="Show password" aria-pressed="false"><i data-i="eye"></i></button>
+                </div>
+              </div>
+            </div>
+            <button class="btn btn--primary btn--block btn--lg" id="admin-submit-btn" type="submit">Sign In to Admin</button>
+          </form>
+
+          <div class="divider" style="margin:20px 0 16px"></div>
+          <div class="row between center">
+            <a class="link small" href="../login.html"><i data-i="user"></i> Trader Sign In</a>
+            <span class="small muted"><i data-i="shield"></i> Restricted Access</span>
+          </div>
+        </div>
+
+        <!-- Admin 2FA Step -->
+        <div class="step" id="step-admin-2fa" style="display:none">
+          <div class="feature__ic"><i data-i="key2fa"></i></div>
+          <h1 class="auth__title">Two-Factor Code</h1>
+          <p class="auth__lead">Enter the 6-digit code from your authenticator app.</p>
+          <div class="otp" id="admin-tfa-otp" role="group" aria-label="Two-factor code"></div>
+          <div class="otp__status" id="admin-tfa-status" aria-live="polite"></div>
+          <div class="row between mt-16">
+            <button class="btn btn--ghost btn--sm" id="admin-2fa-back" type="button"><i data-i="arrow-left"></i> Back</button>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="../assets/js/data.js"></script>
+  <script src="../assets/js/api.js"></script>
+  <script src="../assets/js/core.js"></script>
+  <script>
+    (function () {
+      'use strict';
+      const NX = window.NX, $ = NX.$, $$ = NX.$, I = NX.icon;
+      const STAFF_ROLES = ['admin', 'super_admin', 'loan_officer', 'compliance'];
+
+      const errBox = $('#admin-login-error');
+      const showError = (msg) => {
+        if (!errBox) return;
+        errBox.querySelector('span').textContent = msg;
+        errBox.hidden = false;
+        errBox.style.display = 'flex';
+      };
+      const hideError = () => {
+        if (!errBox) return;
+        errBox.hidden = true;
+        errBox.style.display = 'none';
+      };
+
+      const showStep = (id) => {
+        const steps = ['step-admin-login', 'step-admin-2fa'];
+        steps.forEach((s) => {
+          const el = document.getElementById(s);
+          if (el) {
+            el.style.display = s === id ? 'block' : 'none';
+            el.classList.toggle('is-active', s === id);
+          }
+        });
+      };
+
+      // Check if already authenticated as staff
+      async function checkCurrentSession() {
+        try {
+          const me = await NX.get('/api/auth/me');
+          if (me && me.user && (STAFF_ROLES.includes(me.user.role) || me.user.staff)) {
+            if (!me.pending2fa) {
+              window.location.href = '/admin/';
+              return;
+            } else {
+              showStep('step-admin-2fa');
+              tfa.focus();
+            }
+          }
+        } catch (e) { /* not logged in */ }
+      }
+
+      function handleStaffSuccess(res) {
+        if (res.twoFA || res.twofaRequired) {
+          showStep('step-admin-2fa');
+          tfa.focus();
+          return;
+        }
+
+        const isStaff = res.user && (STAFF_ROLES.includes(res.user.role) || res.user.staff);
+        if (!isStaff) {
+          // Immediately terminate unprivileged session from admin portal
+          NX.post('/api/auth/logout').catch(() => {});
+          showError('Access denied: Administrator privileges required.');
+          showStep('step-admin-login');
+          return;
+        }
+
+        window.location.href = '/admin/';
+      }
+
+      // Password toggle
+      $('#toggle-pw')?.addEventListener('click', (e) => {
+        const pw = $('#admin-pw');
+        pw.type = pw.type === 'password' ? 'text' : 'password';
+        e.currentTarget.setAttribute('aria-pressed', pw.type === 'text');
+      });
+
+      // Form submission
+      $('#admin-login-form')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        hideError();
+
+        const em = $('#admin-email'), pw = $('#admin-pw');
+        const email = (em.value || '').trim();
+        const pass = pw.value || '';
+
+        if (!email || !pass) {
+          showError('Please enter both your admin email and password.');
+          return;
+        }
+
+        const submitBtn = $('#admin-submit-btn');
+        submitBtn.classList.add('is-loading');
+        submitBtn.disabled = true;
+
+        try {
+          const res = await NX.post('/api/auth/login', { email, password: pass });
+          handleStaffSuccess(res);
+        } catch (err) {
+          showError(err.message || 'Invalid administrator credentials.');
+        } finally {
+          submitBtn.classList.remove('is-loading');
+          submitBtn.disabled = false;
+        }
+      });
+
+      // 2FA OTP Setup
+      const st = $('#admin-tfa-status');
+      const tfa = NX.otp($('#admin-tfa-otp'), {
+        length: 6,
+        onComplete: async (code) => {
+          st.innerHTML = '<span class="muted">Verifying…</span>';
+          try {
+            const res = await NX.post('/api/auth/2fa/verify', { code });
+            tfa.valid();
+            st.innerHTML = `<span class="hint--ok">${I('check', 'ic--sm')} Code verified</span>`;
+            setTimeout(() => handleStaffSuccess(res), 400);
+          } catch (e) {
+            tfa.invalid();
+            st.innerHTML = `<span class="hint--error">${NX.esc(e.message || 'Invalid code')}</span>`;
+          }
+        }
+      });
+
+      $('#admin-2fa-back')?.addEventListener('click', () => {
+        showStep('step-admin-login');
+        hideError();
+      });
+
+      // Initialize
+      document.addEventListener('DOMContentLoaded', () => {
+        NX.hydrateLogos();
+        NX.hydrateIcons();
+        checkCurrentSession();
+      });
+      if (document.readyState !== 'loading') {
+        NX.hydrateLogos();
+        NX.hydrateIcons();
+        checkCurrentSession();
+      }
+    })();
+  </script>
+</body>
+</html>

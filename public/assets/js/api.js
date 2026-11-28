@@ -18,19 +18,41 @@
     if (!e) { e = { key: (crypto.randomUUID ? crypto.randomUUID() : String(t) + Math.random().toString(36).slice(2)).replace(/[^A-Za-z0-9-]/g, ''), t }; idemKeys.set(sig, e); }
     return e.key;
   };
+  /** Double-submit CSRF token mirrored from the readable `nx_csrf` cookie. */
+  const csrfToken = () => {
+    const m = document.cookie.match(/(?:^|;\s*)nx_csrf=([^;]+)/);
+    return m ? decodeURIComponent(m[1]) : '';
+  };
   NX.api = async (method, path, body) => {
     const payload = body === undefined || method === 'GET' ? undefined : JSON.stringify(body);
     const headers = { 'Content-Type': 'application/json', 'X-Nectra': '1' };
+    const token = csrfToken();
+    if (token) headers['X-CSRF'] = token;
     if (method === 'POST' && IDEM_PATHS.test(path)) headers['Idempotency-Key'] = idemKeyFor(path, payload || '');
-    const r = await fetch(path, { method, credentials: 'same-origin', headers, body: payload });
+    let r = await fetch(path, { method, credentials: 'same-origin', headers, body: payload });
+    if (r.status === 403 && method !== 'GET') {
+      // Stale/absent token: refresh it once and retry the same request.
+      try {
+        const cfg = await fetch('/api/public/config', { credentials: 'same-origin' });
+        if (!cfg.ok) throw 0;
+        const fresh = csrfToken();
+        if (fresh) headers['X-CSRF'] = fresh;
+        r = await fetch(path, { method, credentials: 'same-origin', headers, body: payload });
+      } catch (e) { /* fall through to the original response */ }
+    }
     let j = {};
     try { j = await r.json(); } catch (e) { /* empty */ }
     if (!r.ok) {
-      const err = new Error(j.error || `Request failed (${r.status})`);
+      const detail = j.detail && (typeof j.detail === 'string' ? j.detail : JSON.stringify(j.detail));
+      const err = new Error(j.error || detail || `Request failed (${r.status})`);
       err.status = r.status; err.data = j;
       const app = document.body && document.body.classList.contains('app');
-      if (r.status === 401 && app) location.href = 'login.html?next=' + encodeURIComponent(location.pathname.replace(/^\//, '') + location.search + location.hash);
-      if (j.code === 'EMAIL_UNVERIFIED' && app) location.href = 'register.html#verify';
+      const admin = document.body && document.body.classList.contains('admin');
+      if (r.status === 401) {
+        if (admin) { location.href = '/admin/login.html'; }
+        else if (app) { location.href = '/login.html?next=' + encodeURIComponent(location.pathname.replace(/^\//, '') + location.search + location.hash); }
+      }
+      if (j.code === 'EMAIL_UNVERIFIED' && (app || admin)) location.href = '/register.html#verify';
       throw err;
     }
     return j;

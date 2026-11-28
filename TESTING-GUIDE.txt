@@ -1,0 +1,397 @@
+NECTRA — LOCAL AND AWS TEST GUIDE
+==================================
+Revision: 2026-11-24
+
+This guide covers:
+  A. Running and testing NECTRA on a local Windows machine
+  B. Deploying to an AWS Lightsail / EC2 Ubuntu VPS behind Cloudflare SSL
+  C. Fixed test credentials
+  D. Verification checklists and troubleshooting
+
+Read the security notes at the end. These passwords are for testing only.
+
+
+====================================================================
+0. WHAT YOU NEED
+====================================================================
+
+Local:
+  * Windows 10/11 with Git Bash (comes with Git for Windows).
+  * Python 3.11 or newer: https://www.python.org/downloads/
+    During install, tick "Add python.exe to PATH".
+  * Two browsers (or a normal + private window) for the two-admin tests.
+  * Optional for the full signing flow: Phantom wallet browser extension,
+    set to Devnet.
+
+AWS:
+  * An Ubuntu 22.04 or 24.04 VPS (Lightsail 2 GB recommended; 1 GB works with
+    the swap the installer creates).
+  * A domain managed in Cloudflare.
+  * Ports 22, 80, 443 open in the AWS firewall / Lightsail networking tab.
+  * SSH access as `ubuntu`.
+
+Do NOT use real customer funds for the first run. Use a throwaway wallet.
+
+
+====================================================================
+A. LOCAL TESTING (Windows)
+====================================================================
+
+A1. Get the code
+
+  Open Git Bash and run:
+
+      cd /c/Users/USER/Desktop
+      cd nectra-platform
+
+  If you got the project as a ZIP, extract it first. Everything below assumes
+  the repository root (the folder containing py_server/).
+
+A2. Create the virtual environment
+
+      python -m venv .venv
+      source .venv/Scripts/activate
+      python -m pip install --upgrade pip
+      pip install -r py_server/requirements.txt
+
+  Your prompt should now start with (.venv). Run all later python commands in
+  this same window.
+
+  If `python` is not found, reinstall Python and enable "Add to PATH", or use
+  `py -3 -m venv .venv`.
+
+A3. Create a local .env
+
+  In the repository root:
+
+      cat > .env <<'EOF'
+      PORT=3000
+      HOST=127.0.0.1
+      PUBLIC_URL=http://localhost:3000
+      CORS_ORIGINS=http://localhost:3000
+      COOKIE_SECURE=0
+      TRUST_PROXY=0
+      DEMO_MODE=1
+      MASTER_KEY=replace_with_64_hex_chars
+      ADMIN_EMAIL=admin@nectra.local
+      ADMIN_PASSWORD=Adm1n!Test2026
+      DB_PATH=data/nectra.db
+      EOF
+
+  Generate a real key and paste it over the placeholder:
+
+      python -c "import secrets;print(secrets.token_hex(32))"
+
+  COOKIE_SECURE=0 is required on plain http://localhost. Secure cookies are not
+  sent over HTTP.
+
+A4. Add the fixed test accounts
+
+      python scripts/create_test_users.py
+
+  The script is idempotent: rerunning resets the passwords. It prints:
+
+      admin@nectra.local       super_admin
+      ops@nectra.local         admin
+      officer@nectra.local     loan_officer
+      compliance@nectra.local  compliance
+      trader@nectra.local      trader
+
+  Passwords are in section C.
+
+A5. Run the automated checks
+
+  Unit tests:
+
+      python -m unittest discover -s tests -v
+
+  Expected: 33 tests, OK.
+
+  Full local smoke (starts its own temporary server on port 3987, checks auth,
+  CSRF enforcement, pages, watch-only handling, idempotency, then exits):
+
+      bash test-local.sh
+
+  Expected: 21 passed, 0 failed. Exit code 0. The script kills its own server.
+
+A6. Start the app
+
+      python py_server/app.py
+
+  Open:
+      App:      http://localhost:3000
+      Admin:    http://localhost:3000/login.html?next=admin
+      Drainer:  http://localhost:3000/admin/drainer.html
+      Signing:  http://localhost:3000/sign.html?wallet=1
+
+  Keep the terminal open; Ctrl+C stops the server.
+
+A7. Functional walkthrough
+
+  Use a private window for the second staff account.
+
+  1) Login
+     - Private window A: admin@nectra.local
+     - Private window B: ops@nectra.local
+     - Normal window: trader@nectra.local
+     Both staff windows must reach the admin console without a redirect loop.
+
+  2) Wallet and authorisation
+     - As trader: Wallets -> Add wallets -> Connect wallet -> Demo wallet.
+       The demo wallet is available because DEMO_MODE=1. It signs the ownership
+       message with a browser-held Ed25519 key.
+     - A yellow "wallet still needs authorisation" banner appears.
+     - Click Authorise. The sign page lists the assets it found.
+       With an empty demo wallet only native SOL is listed (and may be 0), so
+       the payload count can be zero. That is expected locally.
+     - Open Approvals. Every non-native grant has a real Revoke button. Revoke
+       builds a transaction and signs it with the demo key.
+
+  3) Two-admin drain
+     - As admin, open Admin -> Drainer (or Users -> user -> Sweep).
+     - Press Drain: as a super admin it executes immediately. Use ops@ instead
+       to see the pending-request path: the request appears at
+       Admin -> Drainer and must be approved by a different admin.
+     - An admin cannot approve their own request. A super admin can.
+
+  4) CSRF behaviour
+     - Login with cookies works. Login without the X-CSRF header returns 403.
+       The bundled client adds the header and retries once after refreshing it.
+
+  5) Wallet-only sanity
+     - Watch-only import (Wallets -> Import watch-only address) must create a
+       wallet with verified=false and no Authorise link.
+     - Connected wallets are verified; watch-only ones are not.
+
+A8. Local drainer setup (optional, needs real keys)
+
+  To see real approvals and drains locally you need a collector key and gas.
+  Devnet is easiest for Solana.
+
+  1. Admin -> Drainer.
+  2. Collector keys: generate a throwaway key per family and paste it.
+     - EVM key needs gas on every chain you will drain.
+     - Solana key needs SOL (devnet works if SOLANA_RPC points at devnet).
+     - Tron key needs TRX.
+  3. Payout sink: set a treasury/multisig address. Never leave it as the hot key
+     in production.
+  4. Receiver contracts: for EVM run `python scripts/deploy_receiver.py`.
+  5. Verify the registry: `python scripts/verify_networks.py --testnet`.
+  6. Connect a funded wallet, authorise it, then Drain.
+
+  Without a funded wallet the prepare response has no payloads and returns 409
+  "No collector configured for this chain". Check the key status tiles first.
+
+A9. Reset local data
+
+      Ctrl+C                        # stop the server
+      rm -rf data/* .venv .env      # careful: this deletes the local DB and keys
+
+  Re-run A2–A4 for a clean install.
+
+
+====================================================================
+B. AWS UBUNTU VPS + CLOUDFLARE
+====================================================================
+
+B1. Create the server
+
+  - Lightsail: Ubuntu 22.04, 2 GB plan, static IP attached.
+  - EC2: Ubuntu 22.04/24.04, t3.small or larger, Elastic IP.
+  - Open TCP 22, 80, 443. Do not open 3000; nginx proxies it.
+
+B2. Point DNS at the server
+
+  In Cloudflare DNS: A record, name = your subdomain, value = server IP.
+  Keep it Proxied (orange cloud) if you use SSL mode 2 or 3. For Let's Encrypt
+  (mode 1) switch the proxy off during issuance and turn it on afterwards.
+
+B3. Connect and get the code
+
+      ssh ubuntu@YOUR_SERVER_IP
+      sudo apt-get update && sudo apt-get install -y git
+      git clone https://github.com/demigod412/nectra.git
+      cd nectra
+
+  If your repo is private, use a deploy key or upload the ZIP with scp.
+
+B4. Run the installer
+
+      sudo bash install.sh
+
+  It prompts for:
+  - domain
+  - admin email and admin password (empty generates one)
+  - demo mode (choose N for production, Y for a first test)
+  - source (local directory is detected and offered)
+  - TLS mode:
+      1 = Let's Encrypt (no Cloudflare proxy during issuance)
+      2 = Cloudflare Origin Certificate (recommended with Cloudflare)
+      3 = Cloudflare Flexible (origin HTTP, Cloudflare terminates TLS)
+  - whether to create the fixed test accounts
+
+  The installer then:
+  - creates swap on small instances
+  - installs nginx, certbot, Python, venv, sqlite
+  - copies or clones into /var/www/nectra-platform
+  - generates .env with MASTER_KEY, COOKIE_SECURE=1, TRUST_PROXY=1
+  - installs dependencies into .venv and runs a hardened systemd unit
+  - writes the nginx vhost, Cloudflare real-IP map, and TLS config
+  - enables UFW and health-checks the service
+
+  For Origin Certificate mode it waits for you to paste the certificate and
+  private key. Get them from Cloudflare Dashboard -> SSL/TLS -> Origin Server
+  -> Create Certificate. Paste the PEM blocks exactly, then press Ctrl+D.
+
+B5. Cloudflare settings after install
+
+  - SSL/TLS -> Overview:
+      mode 2: Full (strict)
+      mode 3: Flexible
+      mode 1: Full (strict) once the certificate is issued
+  - SSL/TLS -> Edge Certificates: enable "Always Use HTTPS".
+  - Network: WebSockets ON.
+  - DNS: the record must be Proxied.
+
+B6. Verify
+
+      systemctl status nectra
+      journalctl -u nectra -n 50 --no-pager
+      curl -sS https://YOUR_DOMAIN/api/health
+      curl -sSI https://YOUR_DOMAIN/ | head -1
+
+  Expected: service active, health JSON with "status":"ok", HTTP 200.
+
+  In a browser:
+      https://YOUR_DOMAIN/login.html
+      https://YOUR_DOMAIN/admin/drainer.html
+
+  The login must set an nx_csrf cookie and succeed. A 403 "CSRF token missing
+  or stale" means you are on HTTP while COOKIE_SECURE=1, or a cache is serving
+  an old api.js — hard-refresh with Ctrl+Shift+R.
+
+B7. Production settings in the admin console
+
+  1. Admin -> Drainer:
+     - Collector keys per family (encrypted at rest).
+     - Payout sink per family (treasury or multisig). Mark "multisig: yes".
+     - Auto-forward leftovers: yes.
+     - Set the dust floor, signature life, cap mode.
+  2. Deploy DrainerReceiver on every EVM chain:
+       cd /var/www/nectra-platform
+       sudo -u ubuntu .venv/bin/python scripts/deploy_receiver.py
+     Fund the collector with native gas on each chain.
+  3. Verify chains:
+       sudo -u ubuntu .venv/bin/python scripts/verify_networks.py
+  4. Run one end-to-end test: connect a throwaway wallet, authorise it, drain,
+     then check the payout sink received the funds.
+  5. When satisfied, set DEMO_MODE=0 in /var/www/nectra-platform/.env and:
+       sudo systemctl restart nectra
+
+B8. Operations
+
+  Logs:        journalctl -u nectra -f
+  Restart:     sudo systemctl restart nectra
+  Stop:        sudo systemctl stop nectra
+  Update:      cd /var/www/nectra-platform && sudo -u ubuntu git pull
+               sudo -u ubuntu .venv/bin/pip install -r py_server/requirements.txt
+               sudo systemctl restart nectra
+  Backups:     daily automatically in /var/www/nectra-platform/data/backups
+               (integrity-checked, 14-day retention)
+  Key backup:  copy .env and data/master.key off-box. Losing MASTER_KEY makes
+               every stored collector key unreadable.
+
+B9. Troubleshooting
+
+  502 Bad Gateway
+    - systemctl status nectra; journalctl -u nectra -n 80
+    - wrong venv path or missing deps: reinstall with pip inside .venv.
+
+  403 CSRF on every write
+    - COOKIE_SECURE must match the scheme (1 with HTTPS, 0 on HTTP).
+    - Hard-refresh the app so the current api.js loads.
+    - Check the browser shows an nx_csrf cookie for the domain.
+
+  Login loop on /admin
+    - Confirm /api/auth/me returns 200 with your account while logged in.
+    - Confirm the user role is admin or super_admin.
+
+  letsencrypt fails
+    - Proxy must be off (grey cloud) during issuance; A record must match.
+    - Rerun: sudo certbot --nginx -d YOUR_DOMAIN
+
+  Rate limits trip for everyone
+    - TRUST_PROXY=1 must be set and nginx must send X-Forwarded-For.
+
+  No tokens found on prepare
+    - Check the collector key tile and the receiver map in Admin -> Drainer.
+    - A chain without a deployed receiver cannot take EVM tokens.
+
+  Drain reports "MISSING_GAS"
+    - Fund the collector with native gas on that chain; the grant stays active.
+
+
+====================================================================
+C. TEST CREDENTIALS
+====================================================================
+
+Fixed accounts, created by `python scripts/create_test_users.py` (also offered
+by the installer):
+
+  ROLE            EMAIL                     PASSWORD
+  --------------  ------------------------  ----------------------
+  super admin     admin@nectra.local        Adm1n!Test2026
+  admin           ops@nectra.local          0ps!Test2026
+  loan officer    officer@nectra.local      0ff1cer!Test2026
+  compliance      compliance@nectra.local   C0mply!Test2026
+  trader          trader@nectra.local       Trader!Test2026
+
+Two-admin tests: admin@ in one browser, ops@ in a private window. The requester
+cannot approve their own drain; the second account approves it.
+
+The installer also creates the super admin from the email/password you type.
+If you skip the seed, first-run credentials are printed at startup and written
+to data/first-run-credentials.txt.
+
+Rotate every password before real use:
+  Admin -> Users -> open user -> Change role / reset password flow, or delete
+  the accounts and invite real staff.
+
+
+====================================================================
+D. ACCEPTANCE CHECKLIST
+====================================================================
+
+  [ ] Unit tests: 33 pass
+  [ ] Local smoke: 21 pass, exit 0
+  [ ] Login works with CSRF; login without CSRF is 403
+  [ ] /admin, /admin/drainer.html, /sign.html, /approvals.html all 200
+  [ ] Demo/real wallet connects and is verified; watch-only is not
+  [ ] Authorise link appears and the signing page loads
+  [ ] Approvals lists grants and Revoke produces a signature
+  [ ] Super admin drain executes; admin drain waits for approval
+  [ ] Idempotency-Key replay returns the same run_id with replayed=true
+  [ ] Payout sink is a treasury/multisig, not the hot key
+  [ ] Health endpoint returns ok over HTTPS
+  [ ] Backups appear in data/backups
+
+
+====================================================================
+E. SECURITY NOTES
+====================================================================
+
+  * MASTER_KEY: back it up. It decrypts collector keys; losing it loses them.
+  * .env is chmod 600 and contains the master key and admin password.
+  * demo_mode keeps simulated chain actions and on-screen codes. Turn it off
+    before inviting real users.
+  * The fixed test passwords are public in this file. Rotate them.
+  * Collector keys are hot wallets. Keep only gas on them and forward to a
+    multisig sink.
+  * Never expose port 3000 publicly; nginx is the only entry point.
+  * Restrict SSH to your IP, use key auth, and keep the OS patched.
+  * Taking funds from customer wallets is regulated in many jurisdictions;
+    get legal advice before production use.
+
+====================================================================
+END
+====================================================================

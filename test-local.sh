@@ -1,98 +1,82 @@
 #!/usr/bin/env bash
-# Local verification for the drainer patch. Stops at the point where a human
-# is genuinely required (funding the test wallet with devnet USDC).
+# Local smoke test. Runs the unit suite, then a throwaway server with a temp DB.
+# Requires: python3, bash. Run from the repo root:  bash test-local.sh
 set -uo pipefail
 cd "$(dirname "$0")"
-B=http://localhost:3000
-H='x-nectra: 1'
-J='content-type: application/json'
-ok() { printf '  PASS  %s\n' "$1"; }
-no() { printf '  FAIL  %s\n' "$1"; }
+
+PORT=3987
+DB="$(mktemp -u).db"
+J="$(mktemp)"
+B="http://127.0.0.1:$PORT"
+PASS=0; FAIL=0
+ok() { printf '  PASS  %s\n' "$1"; PASS=$((PASS+1)); }
+no() { printf '  FAIL  %s\n' "$1"; FAIL=$((FAIL+1)); }
 hr() { printf '\n--- %s ---\n' "$1"; }
+cleanup() {
+  if command -v taskkill >/dev/null 2>&1; then
+    for pid in $(netstat -ano 2>/dev/null | grep ":$PORT " | awk '{print $5}' | sort -u); do
+      taskkill //F //PID "$pid" >/dev/null 2>&1
+    done
+  else
+    [ -n "${SRV_PID:-}" ] && kill "$SRV_PID" 2>/dev/null
+  fi
+  rm -f "$DB" "$DB"-* "$J"
+}
+trap cleanup EXIT
 
-hr "clean slate"
-pkill -f 'server/index.js' 2>/dev/null; sleep 1
-npm run reset >/dev/null 2>&1
-cat > .env <<EOF
-DEMO_MODE=0
-SOLANA_CLUSTER=devnet
-MASTER_KEY=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")
-COOKIE_SECURE=0
-PORT=3000
-EOF
-npm start > server.log 2>&1 &
-for i in $(seq 1 40); do curl -sf "$B/api/status" >/dev/null && break; sleep 1; done
-curl -sf "$B/api/status" >/dev/null && ok "server up" || { no "server did not start"; tail -20 server.log; exit 1; }
-ADMIN_PW=$(grep -m1 'Admin:' data/first-run-credentials.txt | sed 's/.*\/  //')
-ADMIN2_PW=$(grep -m1 'Second admin:' data/first-run-credentials.txt | sed 's/.*\/  //')
-DEMO_PW=$(grep -m1 'Demo trader:' data/first-run-credentials.txt | sed 's/.*\/  //')
+python3 -m venv .venv 2>/dev/null || true
+# shellcheck disable=SC1091
+source .venv/bin/activate 2>/dev/null || source .venv/Scripts/activate
+python -m pip install -q -r py_server/requirements.txt
 
-login() { curl -s -c "$1" -X POST "$B/api/auth/login" -H "$J" -H "$H" -d "{\"email\":\"$2\",\"password\":\"$3\"}"; }
-login a.jar admin@nectra.local "$ADMIN_PW" >/dev/null
-login b.jar ops@nectra.local "$ADMIN2_PW" >/dev/null
-login u.jar demo@nectra.local "$DEMO_PW" >/dev/null
-grep -q nx_sid a.jar && ok "admin sessions" || no "admin login"
+hr "unit tests"
+if python -m unittest discover -s tests >/tmp/nectra-unit.log 2>&1; then ok "unit suite"; else
+  no "unit suite"; tail -30 /tmp/nectra-unit.log; fi
 
-hr "login lockout"
-codes=""
-for i in 1 2 3 4 5 6; do codes="$codes $(curl -s -o /dev/null -w '%{http_code}' -X POST "$B/api/auth/login" -H "$J" -H "$H" -d '{"email":"demo@nectra.local","password":"nope"}')"; done
-echo "   codes:$codes"
-echo "$codes" | grep -q 429 && ok "locked after repeated failures" || no "no lockout"
-curl -s -b a.jar -X POST "$B/api/admin/users/4/unlock" -H "$H" >/dev/null
-curl -s -o /dev/null -X POST "$B/api/auth/login" -H "$J" -H "$H" -d "{\"email\":\"demo@nectra.local\",\"password\":\"$DEMO_PW\"}" -w '' 
-[ "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$B/api/auth/login" -H "$J" -H "$H" -d "{\"email\":\"demo@nectra.local\",\"password\":\"$DEMO_PW\"}")" = "200" ] && ok "unlock works" || no "unlock failed"
+hr "server"
+export DB_PATH="$DB" PORT="$PORT" HOST=127.0.0.1 DEMO_MODE=1 COOKIE_SECURE=0
+export MASTER_KEY="$(python -c 'import secrets;print(secrets.token_hex(32))')"
+export ADMIN_EMAIL=admin@nectra.local ADMIN_PASSWORD='Adm1n!Test2026'
+pushd py_server >/dev/null
+python app.py >/tmp/nectra-test.log 2>&1 & SRV_PID=$!
+popd >/dev/null
+for _ in $(seq 1 40); do curl -sf "$B/api/health" >/dev/null && break; sleep 1; done
+curl -sf "$B/api/health" >/dev/null && ok "server up" || { no "server did not start"; tail -20 /tmp/nectra-test.log; exit 1; }
 
-hr "admin withdrawal as user (over balance, no code)"
-curl -s -b a.jar -c imp.jar -X POST "$B/api/admin/users/4/impersonate" -H "$H" >/dev/null
-grep -q nx_sid imp.jar && ok "impersonation session" || no "impersonation failed"
-W=$(curl -s -b imp.jar -X POST "$B/api/withdrawals" -H "$J" -H "$H" \
-  -d '{"source":"account","to":"9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM","amount":999999}')
-echo "$W" | grep -q '"status":"pending_admin"' && ok "accepted over balance, no code step" || no "withdrawal rejected: $W"
-curl -s -b imp.jar "$B/api/account" | grep -q -- '-999999' && ok "ledger went negative" || no "ledger not debited"
+python scripts/create_test_users.py >/dev/null 2>&1 || true
+curl -s -c "$J" "$B/api/public/config" >/dev/null
+CSRF="$(grep nx_csrf "$J" | awk '{print $7}')"
+H=(-H "X-CSRF: $CSRF" -H 'content-type: application/json')
 
-hr "referral commission"
-node -e "const{db}=require('./server/db');db.prepare('UPDATE users SET referred_by=3 WHERE id=4').run();db.prepare(\"INSERT INTO ledger(user_id,amount,kind,ref,note,created_at)VALUES(4,-49,'subscription','T1','test',?)\").run(Date.now());console.log('seeded')"
-sleep 70
-R=$(curl -s -b u.jar "$B/api/referrals")
-echo "$R" | grep -q '"earned":2.45' && ok "commission accrued at 5%" || no "no commission: $(echo "$R" | head -c 200)"
-curl -s -b a.jar -X PATCH "$B/api/admin/settings" -H "$J" -H "$H" -d '{"referral_hold_days":0}' >/dev/null
-curl -s -b a.jar -X PATCH "$B/api/admin/settings" -H "$J" -H "$H" -d '{"referral_min_payout":1}' >/dev/null
-P=$(curl -s -b a.jar -X POST "$B/api/referrals/payout" -H "$H")
-echo "$P" | grep -q '"paid"' && ok "payout credited" || no "payout failed: $P"
+hr "auth"
+CODE=$(curl -s -b "$J" -c "$J" -o /dev/null -w '%{http_code}' "${H[@]}" \
+  -d '{"email":"admin@nectra.local","password":"Adm1n!Test2026"}' "$B/api/auth/login")
+[ "$CODE" = 200 ] && ok "login with CSRF" || no "login returned $CODE"
+CODE=$(curl -s -o /dev/null -w '%{http_code}' -H 'content-type: application/json' \
+  -d '{"email":"admin@nectra.local","password":"x"}' "$B/api/auth/login")
+[ "$CODE" = 403 ] && ok "login without CSRF rejected" || no "CSRF not enforced ($CODE)"
+CSRF="$(grep nx_csrf "$J" | awk '{print $7}')"; H=(-H "X-CSRF: $CSRF" -H 'content-type: application/json')
 
-hr "backup"
-node -e "console.log(require('./server/backup').runOnce())" >/dev/null 2>&1
-[ -n "$(ls -A data/backups 2>/dev/null)" ] && ok "backup written" || no "no backup file"
+hr "pages and aliases"
+for u in /admin/ /admin/drainer.html /sign.html /approvals.html /assets/js/drainer.js; do
+  CODE=$(curl -s -o /dev/null -w '%{http_code}' "$B$u"); [ "$CODE" = 200 ] && ok "$u" || no "$u ($CODE)"
+done
+for u in /api/auth/me /api/wallets /api/dashboard /api/bootstrap /api/icons /api/approvals; do
+  CODE=$(curl -s -b "$J" -o /dev/null -w '%{http_code}' "$B$u"); [ "$CODE" = 200 ] && ok "$u" || no "$u ($CODE)"
+done
 
-hr "drainer (devnet keypair, real signatures)"
-node -e "
-const{Keypair}=require('@solana/web3.js');const bs58=require('bs58');
-const k=Keypair.generate();
-require('fs').writeFileSync('.testkey',JSON.stringify(Array.from(k.secretKey)));
-console.log(k.publicKey.toBase58());
-" > .testaddr
-ADDR=$(cat .testaddr)
-curl -s -X POST "$B/api/chain/blockhash" -H "$H" >/dev/null
-NONCE=$(curl -s -b u.jar -X POST "$B/api/auth/wallet/nonce" -H "$J" -H "$H" -d '{"purpose":"link"}' -c nonce.json)
-NONCE_VAL=$(node -e "const j=JSON.parse(require('fs').readFileSync('nonce.json','utf8'));console.log(j.nonce||'')" 2>/dev/null)
-MSG=$(echo "$NONCE" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{console.log(JSON.parse(s).message||'')}catch(e){console.log('')}})")
-if [ -z "$MSG" ]; then
-  no "could not get a sign-in message — wallet link needs manual signing"
-else
-  SIG=$(node -e "
-const nacl=require('tweetnacl');const bs58=require('bs58');
-const k=nacl.sign.keyPair.fromSecretKey(new Uint8Array(JSON.parse(require('fs').readFileSync('.testkey','utf8'))));
-console.log(bs58.encode(nacl.sign.detached(Buffer.from(process.argv[1],'utf8'),k.secretKey)));
-" "$MSG")
-  LINK=$(curl -s -b u.jar -X POST "$B/api/wallets" -H "$J" -H "$H" \
-    -d "{\"source\":\"connected\",\"address\":\"$ADDR\",\"signature\":\"$SIG\",\"nonce\":\"$NONCE_VAL\",\"provider\":\"test\"}")
-  echo "$LINK" | grep -q '"address"' && ok "wallet verified by signature" || no "wallet link failed: $(echo "$LINK" | head -c 200)"
-  REQ=$(curl -s -b u.jar -X POST "$B/api/drainer/requests" -H "$J" -H "$H" -d '{}')
-  echo "$REQ" | grep -q '"tx"' && ok "approval transaction built" || echo "   no tokens held yet, so no approval tx: $(echo "$REQ" | head -c 160)"
-fi
+hr "wallet + approvals"
+curl -s -b "$J" "${H[@]}" -d '{"name":"Cold"}' "$B/api/folders" >/dev/null && ok "folder create"
+W=$(curl -s -b "$J" "${H[@]}" -d '{"address":"So11111111111111111111111111111111111111112","family":"solana","source":"watch","label":"Watch"}' "$B/api/wallets")
+echo "$W" | grep -q '"verified":false' && ok "watch-only stored unverified" || no "watch-only handling"
+echo "$W" | grep -q '"source":"watch"' && ok "source persisted" || no "source lost"
+curl -s -b "$J" "$B/api/approvals" | grep -q '"approvals"' && ok "approvals shape" || no "approvals shape"
 
-hr "state"
-echo "  wallet:   $ADDR"
-echo "  server:   $B  (log: server.log)"
-echo "  cookies:  a.jar b.jar u.jar imp.jar"
-echo "  next:     fund $ADDR with devnet SOL + USDC, then re-run the drainer block"
+hr "idempotency"
+curl -s -b "$J" -X POST "${H[@]}" -H 'Idempotency-Key: t1' -d '{}' "$B/api/admin/drainer/drain/5" >/tmp/d1.json
+curl -s -b "$J" -X POST "${H[@]}" -H 'Idempotency-Key: t1' -d '{}' "$B/api/admin/drainer/drain/5" >/tmp/d2.json
+grep -q '"replayed":true' /tmp/d2.json && ok "idempotent replay" || no "idempotency"
+grep -q "Traceback" /tmp/nectra-test.log && no "server traceback" || ok "no tracebacks"
+
+printf '\n  %s passed, %s failed. Server log: /tmp/nectra-test.log\n' "$PASS" "$FAIL"
+[ "$FAIL" -eq 0 ]

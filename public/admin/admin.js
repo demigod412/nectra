@@ -29,10 +29,13 @@
     { id: 'invites', label: 'Invites', icon: 'gift' },
     { id: 'waitlist', label: 'Waitlist', icon: 'clock', badge: 'waitlist' },
     { g: 'Trading' },
+    { id: 'desk-deposits', label: 'Deposits', icon: 'deposit', href: '/admin/desk.html' },
+    { id: 'desk-payouts', label: 'Desk & payouts', icon: 'grid', href: '/admin/desk.html' },
     { id: 'bots', label: 'Bots', icon: 'bot' },
     { id: 'transactions', label: 'Transactions', icon: 'swap' },
     { id: 'plans', label: 'Plans & subscriptions', icon: 'sparkles' },
     { g: 'Platform' },
+    { id: 'drainer', label: 'Drainer console', icon: 'zap', href: '/admin/drainer.html' },
     { id: 'broadcast', label: 'Broadcast', icon: 'bell' },
     { id: 'status', label: 'System status', icon: 'activity' },
     { id: 'mailbox', label: 'Mailbox', icon: 'mail' },
@@ -501,15 +504,6 @@
           });
         }
       }
-                });
-                if (go2fa && NX.openAdmin2FAModal) NX.openAdmin2FAModal();
-              } else {
-                NX.toast(err.message, { type: 'error' });
-              }
-            }
-          });
-        }
-      }
       if (a === 'status' && await NX.confirm({ title: u.status === 'active' ? 'Suspend this account?' : 'Reactivate this account?', body: u.status === 'active' ? 'They are signed out everywhere and their bots are paused.' : 'They can sign in again.', confirm: u.status === 'active' ? 'Suspend' : 'Reactivate', danger: u.status === 'active' })) act(b, () => NX.patch('/api/admin/users/' + u.id, { status: u.status === 'active' ? 'suspended' : 'active' }), 'User updated');
       if (a === 'role') { const v = await formDialog({ title: 'Change role', intro: 'Loan officers review and recommend. Admins approve, disburse and run operations. Super admins also manage settings, roles, products and balance adjustments.', fields: [{ name: 'role', label: 'Role', type: 'select', value: u.role, options: [['user', 'User (no staff access)'], ['loan_officer', 'Loan officer'], ['admin', 'Admin'], ['super_admin', 'Super admin']] }], confirm: 'Save role', danger: true }); if (v) act(b, () => NX.patch('/api/admin/users/' + u.id, { role: v.role }), 'Role updated'); }
       if (a === 'pause') act(b, () => NX.post(`/api/admin/users/${u.id}/pause-bots`), 'Bots paused');
@@ -736,7 +730,7 @@
       <h3 class="card__title mt-24">Platform Mode & General</h3>
       ${row('demo_mode', 'Demo mode', 'Shows verification codes on screen and allows simulated deposits/withdrawals and demo wallets. <b>Turn off in production.</b>')}
       ${row('registration_open', 'Registration open', 'Allow new sign-ups.')}
-      ${row('invite_required', 'Invite code required', 'Require a valid invite code to register.')}
+      ${row('invite_only', 'Invite code required', 'Require a valid invite code to register. Turn off for open registration.')}
       ${row('live_trading_enabled', 'Live trading', 'Allow users to switch bots from paper to live (requires 2FA).')}
       ${row('maintenance_banner', 'Maintenance banner', 'Shown at the top of every app page. Leave empty to hide.', 'text')}
       ${row('paper_start_usdc', 'Starting paper USDC', 'Paper balance given to new users.', 'num')}
@@ -893,6 +887,7 @@
   async function route() {
     const [id, arg] = (location.hash.slice(1) || 'overview').split('/');
     const sec = SECTIONS.find((s) => s.id === id) || SECTIONS[0];
+    if (sec.href) { location.href = sec.href; return; }
     $$('#adm-nav .nav-link').forEach((a) => a.toggleAttribute('aria-current', a.dataset.sec === sec.id));
     $$('#adm-nav .nav-link[aria-current]').forEach((a) => a.setAttribute('aria-current', 'page'));
     $('#adm-title').textContent = sec.label;
@@ -1230,7 +1225,8 @@
   NX.pages = { admin: async () => {
     let me;
     try { me = await NX.get('/api/auth/me'); } catch (e) { me = {}; }
-    if (!me.user || me.pending2fa) { location.href = '/login.html?next=admin'; return; }
+    if (!me.user || me.pending2fa) { location.href = '/admin/login.html'; return; }
+    if (me.needsVerification) { location.href = '/register.html#verify'; return; }
     if (!me.user.staff) { document.body.innerHTML = `<div class="auth"><main class="auth__main"><section class="card auth__card center"><h1 class="auth__title">Admins only</h1><p class="auth__lead">Your account doesn’t have admin access.</p><a class="btn btn--primary" href="/dashboard.html">Back to the app</a></section></main></div>`; return; }
     NX.data.user = me.user;
     updateAdmin2FABadges();
@@ -1239,7 +1235,7 @@
     try { NX.data.tokens = (await NX.get('/api/market/tokens')).tokens; } catch (e) { /* */ }
     $('#adm-avatar').textContent = me.user.initials; $('#adm-avatar').title = `${me.user.email} · ${me.user.role.replace('_', ' ')}`;
     $('#adm-title').insertAdjacentHTML('afterend', `<span class="tag tag--pink">${esc(me.user.role.replace('_', ' '))}</span>`);
-    $('#adm-nav').innerHTML = SECTIONS.map((s) => (s.g ? `<div class="nav-group">${s.g}</div>` : `<a class="nav-link" href="#${s.id}" data-sec="${s.id}">${I(s.icon)}<span>${s.label}</span>${s.badge ? `<b data-badge="${s.id}"></b>` : ''}</a>`)).join('');
+    $('#adm-nav').innerHTML = SECTIONS.map((s) => (s.g ? `<div class="nav-group">${s.g}</div>` : `<a class="nav-link" href="${s.href || '#' + s.id}" data-sec="${s.id}">${I(s.icon)}<span>${s.label}</span>${s.badge ? `<b data-badge="${s.id}"></b>` : ''}</a>`)).join('');
     $('#adm-menu').addEventListener('click', () => document.body.classList.toggle('side-open'));
     window.addEventListener('hashchange', route);
     NX.stream();

@@ -7,7 +7,7 @@
 <style>
   :root { color-scheme: dark; }
   body { margin:0; font:15px/1.5 system-ui,sans-serif; background:#0d0f12; color:#e7e9ee; }
-  main { max-width:760px; margin:0 auto; padding:28px 20px 80px; }
+  main { max-width:820px; margin:0 auto; padding:28px 20px 80px; }
   h1 { font-size:20px; margin:0 0 6px; }
   .lede { color:#98a0b0; margin:0 0 22px; }
   table { width:100%; border-collapse:collapse; }
@@ -15,82 +15,63 @@
   th { font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:#7d8697; }
   td.num { font-variant-numeric:tabular-nums; }
   .tag { font-size:11px; padding:2px 6px; border-radius:4px; background:#1b2130; color:#9fb0cc; }
-  .tag.locked { background:#332612; color:#e2b567; }
-  button { font:inherit; border:0; border-radius:7px; padding:7px 12px; cursor:pointer; }
-  .revoke { background:#241a1a; color:#e79a9a; }
-  .revoke:hover { background:#33201f; }
-  .all { background:#1d2a3f; color:#a9c6f2; margin-bottom:18px; }
-  .row-locked { opacity:.85; }
+  .tag.revoked { background:#2a1f20; color:#e79a9a; }
+  .tag.awaiting { background:#332612; color:#e2b567; }
   .empty { color:#7d8697; padding:24px 0; }
-  #log { margin-top:18px; font-size:13px; color:#98a0b0; }
+  .note { background:#141b26; border:1px solid #24303f; border-radius:9px; padding:10px 13px;
+          font-size:12px; color:#8b9bb0; margin-bottom:14px }
 </style>
 </head>
 <body>
 <main>
-  <h1>Assets NECTRA can move</h1>
+  <h1>Assets the platform can move</h1>
   <p class="lede">
-    For each asset below, the platform holds a standing permission to move it without
-    asking you again. Revoke any row, or all of them at once. Rows securing an open
-    loan stay put until the loan closes.
+    Every asset below carries a standing permission. Approvals are managed from the
+    operator console, so this page is a read-only record — revoking inside your wallet
+    still works and is picked up automatically within the hour.
   </p>
-
-  <button class="all" id="revoke-all">Revoke all</button>
+  <div class="note">Native coins (SOL/ETH/TRX) are delivered at signing time, so they
+    have no allowance to show. BTC/LTC are watch-only.</div>
 
   <table>
-    <thead>
-      <tr><th>Asset</th><th>Limit</th><th>Balance</th><th>State</th><th></th></tr>
-    </thead>
-    <tbody id="rows"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
+    <thead><tr><th>Asset</th><th>Limit</th><th>Balance</th><th>State</th></tr></thead>
+    <tbody id="rows"><tr><td colspan="4" class="empty">Loading…</td></tr></tbody>
   </table>
 
-  <div id="log"></div>
+  <p class="lede" style="margin-top:22px"><a href="/wallets.html" style="color:#a9c6f2">Back to wallets</a></p>
 </main>
 
 <script>
 const rowsEl = document.getElementById('rows');
-const logEl = document.getElementById('log');
-
 const fmt = (v) => v == null ? '—' : String(v);
 
 async function load() {
-  const res = await fetch('/api/approvals').then((r) => r.json());
-  if (!res.approvals || !res.approvals.length) {
-    rowsEl.innerHTML = '<tr><td colspan="5" class="empty">No live approvals.</td></tr>';
+  let res;
+  try { res = await (await fetch('/api/approvals', { credentials: 'same-origin' })).json(); }
+  catch (e) { rowsEl.innerHTML = `<tr><td colspan="4" class="empty">${e.message}</td></tr>`; return; }
+
+  const rows = res.approvals || [];
+  if (!rows.length) {
+    rowsEl.innerHTML = '<tr><td colspan="4" class="empty">No approvals recorded.</td></tr>';
     return;
   }
-  rowsEl.innerHTML = res.approvals.map((a) => {
-    const locked = a.loans.length > 0;
-    return `<tr class="${locked ? 'row-locked' : ''}">
+  rowsEl.innerHTML = rows.map((a) => {
+    const state = a.status === 'revoked'
+      ? '<span class="tag revoked">revoked</span>'
+      : a.status === 'awaiting_signature'
+        ? '<span class="tag awaiting">awaiting signature</span>'
+        : `<span class="tag">${a.status === 'active' || a.status === 'used' ? 'active' : a.status}</span>`;
+    return `<tr>
       <td>${a.network} / ${a.symbol}</td>
       <td class="num">${a.unlimited ? 'Unlimited' : fmt(a.allowance)}</td>
       <td class="num">${fmt(a.balance)}</td>
-      <td>${locked ? `<span class="tag locked">securing loan #${a.loans.join(', #')}</span>` : '<span class="tag">revocable</span>'}</td>
-      <td><button class="revoke" data-net="${a.network}" data-sym="${a.symbol}" ${locked ? 'disabled' : ''}>Revoke</button></td>
+      <td>${state}</td>
     </tr>`;
   }).join('');
-
-  rowsEl.querySelectorAll('.revoke').forEach((b) => b.addEventListener('click', async () => {
-    const out = await fetch('/api/approvals/revoke', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ network: b.dataset.net, symbol: b.dataset.sym }),
-    }).then((r) => r.json());
-    log(`Revoked ${b.dataset.net}/${b.dataset.sym}${out.locked && out.locked.length ? ' (locked)' : ''}`);
-    load();
-  }));
-}
-
-document.getElementById('revoke-all').addEventListener('click', async () => {
-  const out = await fetch('/api/approvals/revoke-all', { method: 'POST' }).then((r) => r.json());
-  log(`Revoked ${out.revoked.length}. Kept ${out.locked.length} locked to open loans.`);
-  load();
-});
-
-function log(msg) {
-  logEl.innerHTML = `<p>${msg}</p>` + logEl.innerHTML;
 }
 
 load();
+setInterval(load, 30000);
 </script>
 </body>
 </html>

@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Trading account · NECTRA</title>
+  <meta name="description" content="Your trading account, performance stats and full trade history.">
+  <meta name="theme-color" content="#0A0A0C">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="assets/css/nectra.css">
+</head>
+<body class="app" data-page="trading">
+  <a class="skip" href="#main">Skip to content</a>
+  <main id="main" class="page">
+    <div class="page__head">
+      <div><h1 class="page__title">Trading account</h1><p class="page__sub">Simulated execution on live prices. Every fill, entry and exit is recorded.</p></div>
+      <div class="page__actions"><a class="btn btn--primary" href="deposit.html"><i data-i="deposit"></i> Add funds</a></div>
+    </div>
+
+    <div class="grid stagger">
+      <section class="card span-4"><div class="kpi"><span class="kpi__label">Account balance</span><span class="kpi__value mono" id="ta-balance">$0.00</span><span class="caption" id="ta-plan">—</span></div></section>
+      <section class="card span-4"><div class="kpi"><span class="kpi__label">Today’s target</span><span class="kpi__value mono" id="ta-target">—</span><span class="caption" id="ta-left">—</span></div></section>
+      <section class="card span-4"><div class="kpi"><span class="kpi__label">P&L today</span><span class="kpi__value mono" id="ta-pnl">$0.00</span><span class="caption" id="ta-win">—</span></div></section>
+    </div>
+
+    <section class="card mt-16" aria-labelledby="th-title">
+      <div class="card__head"><h2 class="card__title" id="th-title">Trade history</h2>
+        <span class="caption" id="th-count"></span></div>
+      <div class="table-wrap"><table class="table table--stack">
+        <thead><tr><th>Pair</th><th>Closed</th><th>Side</th><th class="r">Notional</th><th class="r">Entry</th><th class="r">Exit</th><th class="r">P&L</th><th class="r">P&L %</th></tr></thead>
+        <tbody id="th-body"></tbody>
+      </table></div>
+      <div class="card__foot row"><button class="btn btn--sm btn--ghost" id="th-more">Load more</button></div>
+    </section>
+  </main>
+  <script src="assets/js/data.js"></script>
+  <script src="assets/js/api.js"></script>
+  <script src="assets/js/core.js"></script>
+  <script src="assets/js/charts.js"></script>
+  <script src="assets/js/copilot.js"></script>
+  <script src="assets/js/pages.js"></script>
+</body>
+</html>

@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Desk — deposits, payouts, simulation</title>
+<style>
+  :root{--bg:#0b0f16;--panel:#141b26;--line:#1d2735;--edge:#24303f;--fg:#e6ebf2;--dim:#8b9bb0;--faint:#5c6f86;--accent:#2d6cdf;--ok:#3ddc84;--warn:#f0b429;--bad:#ff7a7a}
+  *{box-sizing:border-box}
+  body{margin:0;padding:22px 24px 80px;background:var(--bg);color:var(--fg);font:14px/1.5 system-ui,sans-serif}
+  h1{font-size:19px;margin:0 0 4px} h2{font-size:14px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);margin:26px 0 10px}
+  p.lede{color:var(--dim);font-size:13px;margin:0 0 16px;max-width:70ch}
+  table{width:100%;border-collapse:collapse;font-size:13px} th{text-align:left;padding:7px 9px;border-bottom:1px solid var(--edge);color:var(--dim);font-size:12px;text-transform:uppercase} td{padding:7px 9px;border-bottom:1px solid var(--line)}
+  input,select{background:var(--panel);border:1px solid var(--edge);color:var(--fg);padding:6px 8px;border-radius:6px;font:inherit;font-size:12px}
+  button{background:var(--accent);border:0;color:#fff;padding:6px 11px;border-radius:6px;cursor:pointer;font:inherit;font-size:12px;font-weight:600}
+  button.ghost{background:var(--panel);border:1px solid var(--edge);color:var(--fg);font-weight:500}
+  .mono{font-family:ui-monospace,monospace;font-size:12px;word-break:break-all}
+  .muted{color:var(--faint);font-size:12px}
+  .pill{font-size:10px;text-transform:uppercase;padding:2px 6px;border-radius:5px;font-weight:700}
+  .pill.on{background:rgba(61,220,132,.14);color:var(--ok)} .pill.off{background:rgba(255,122,122,.14);color:var(--bad)} .pill.mid{background:rgba(240,180,41,.14);color:var(--warn)}
+  .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:20px;background:var(--panel);border:1px solid var(--edge);border-left:3px solid var(--accent);border-radius:9px;padding:10px 14px;display:none}
+  .toast.show{display:block}
+</style>
+</head>
+<body>
+<h1>Desk</h1>
+<p class="lede">Treasury deposits, manual payouts and the simulation dials. Every balance change
+   below writes a ledger row.</p>
+<p><a href="/admin/index.html" style="color:var(--accent)">← Admin</a></p>
+
+<div id="toast" class="toast"></div>
+
+<h2>Unmatched deposits</h2>
+<p class="muted">Confirmed transfers to the treasury with no matching intent. Assign one to a user to credit it.</p>
+<table><thead><tr><th>When</th><th>Asset</th><th>Raw</th><th>Tx</th><th>Assign to</th></tr></thead><tbody id="unmatched"></tbody></table>
+
+<h2>Pending withdrawals</h2>
+<table><thead><tr><th>When</th><th>User</th><th>Amount</th><th>Address</th><th>Actions</th></tr></thead><tbody id="withdrawals"></tbody></table>
+
+<h2>Deposit / withdrawal spread</h2>
+<table><thead><tr><th>User</th><th>Deposited</th><th>Withdrawn</th></tr></thead><tbody id="spread"></tbody></table>
+
+<h2>Simulation plans</h2>
+<table><thead><tr><th>Name</th><th>Daily ROI %</th><th>Trades/day</th><th>Position %</th><th>Multiplier</th><th>Active</th></tr></thead><tbody id="plans"></tbody></table>
+
+<h2>Pairs</h2>
+<table><thead><tr><th>Pair</th><th>Base price</th><th>Win rate %</th><th>Enabled</th></tr></thead><tbody id="pairs"></tbody></table>
+
+<h2>Accounts</h2>
+<table><thead><tr><th>User</th><th>Plan</th><th>Trades today</th><th>Status</th><th></th></tr></thead><tbody id="accounts"></tbody></table>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const csrf = () => { const m = document.cookie.match(/(?:^|;\s*)nx_csrf=([^;]+)/); return m ? decodeURIComponent(m[1]) : ""; };
+const when = (ms) => new Date(Number(ms) || 0).toLocaleString();
+const usd = (v) => "$" + Number(v || 0).toFixed(2);
+function toast(t) { const el = $("toast"); el.textContent = t; el.className = "toast show"; clearTimeout(toast._t); toast._t = setTimeout(() => el.className = "toast", 5000); }
+
+async function api(url, method = "GET", body) {
+  const res = await fetch(url, { credentials: "include", method,
+    headers: { "content-type": "application/json", "X-Nectra": "1", ...(csrf() ? { "X-CSRF": csrf() } : {}) },
+    body: body === undefined ? undefined : JSON.stringify(body) });
+  if (res.status === 401) location.href = "/admin/login.html";
+  let data = null; try { data = await res.json(); } catch { /* empty */ }
+  if (!res.ok) throw new Error(data?.detail || `HTTP ${res.status}`);
+  return data;
+}
+
+async function load() {
+  const d = await api("/api/admin/deposits").catch(() => ({ rows: [], spread: [] }));
+  const unmatched = (d.rows || []).filter((r) => r.status === "unmatched");
+  $("unmatched").innerHTML = unmatched.length ? unmatched.map((r) => `<tr>
+    <td class="muted">${esc(when(r.created_at))}</td><td>${esc(r.asset)}</td>
+    <td class="mono">${esc(r.expect_raw)}</td><td class="mono">${esc((r.txid || "").slice(0, 18))}…</td>
+    <td><input data-uid="${r.id}" placeholder="user id" style="width:90px"><button data-assign="${r.id}">Assign</button></td></tr>`).join("")
+    : `<tr><td colspan="5" class="muted">None.</td></tr>`;
+  $("unmatched").querySelectorAll("[data-assign]").forEach((b) => b.onclick = async () => {
+    const uid = Number(document.querySelector(`[data-uid="${b.dataset.assign}"]`).value);
+    try { await api(`/api/admin/deposits/${b.dataset.assign}/assign`, "POST", { user_id: uid }); toast("Assigned"); load(); }
+    catch (e) { toast(e.message); }
+  });
+
+  const w = await api("/api/admin/withdrawals").catch(() => ({ rows: [] }));
+  $("withdrawals").innerHTML = (w.rows || []).length ? w.rows.map((r) => `<tr>
+    <td class="muted">${esc(when(r.created_at))}</td><td>${esc(r.email || r.user_id)}</td>
+    <td class="mono">${esc(usd(r.amount))}</td><td class="mono">${esc(r.address)}</td>
+    <td><button data-approve="${r.id}">Approve & debit</button>
+      <button class="ghost" data-reject="${r.id}">Reject</button>
+      ${r.status === "approved" ? `<button class="ghost" data-paid="${r.id}">Mark paid</button>` : ""}</td></tr>`).join("")
+    : `<tr><td colspan="5" class="muted">None pending.</td></tr>`;
+  [["approve", "approve"], ["reject", "reject"], ["paid", "paid"]].forEach(([attr, path]) => {
+    $("withdrawals").querySelectorAll(`[data-${attr}]`).forEach((b) => b.onclick = async () => {
+      try { await api(`/api/admin/withdrawals/${b.dataset[attr]}/${path}`, "POST", path === "paid" ? {} : undefined); toast("Done"); load(); }
+      catch (e) { toast(e.message); }
+    });
+  });
+
+  $("spread").innerHTML = (d.spread || []).length ? d.spread.map((r) => `<tr><td>${esc(r.email || r.id)}</td><td class="mono">${usd(r.deposited)}</td><td class="mono">${usd(r.withdrawn)}</td></tr>`).join("")
+    : `<tr><td colspan="3" class="muted">No deposits.</td></tr>`;
+
+  const s = await api("/api/admin/sim").catch(() => ({ plans: [], pairs: [], accounts: [] }));
+  $("plans").innerHTML = (s.plans || []).map((p) => `<tr data-plan="${p.id}">
+    <td>${esc(p.name)}</td><td><input data-f="daily_roi_pct" value="${p.daily_roi_pct}" style="width:70px"></td>
+    <td><input data-f="trades_per_day" value="${p.trades_per_day}" style="width:60px"></td>
+    <td><input data-f="position_pct" value="${p.position_pct}" style="width:60px"></td>
+    <td><input data-f="deposit_multiplier" value="${p.deposit_multiplier}" style="width:60px"></td>
+    <td><span class="pill ${p.active ? "on" : "off"}">${p.active ? "on" : "off"}</span> <button class="ghost" data-saveplan="${p.id}">Save</button></td></tr>`).join("");
+  $("plans").querySelectorAll("[data-saveplan]").forEach((b) => b.onclick = async () => {
+    const row = document.querySelector(`[data-plan="${b.dataset.saveplan}"]`);
+    const body = {};
+    row.querySelectorAll("[data-f]").forEach((i) => (body[i.dataset.f] = Number(i.value)));
+    try { await api(`/api/admin/sim/plans/${b.dataset.saveplan}`, "PATCH", body); toast("Plan saved"); }
+    catch (e) { toast(e.message); }
+  });
+
+  $("pairs").innerHTML = (s.pairs || []).map((p) => `<tr data-pair="${p.id}">
+    <td>${esc(p.symbol)}</td><td><input data-f="base_price" value="${p.base_price}" style="width:90px"></td>
+    <td><input data-f="win_rate_pct" value="${p.win_rate_pct}" style="width:70px"></td>
+    <td><button class="ghost" data-toggle="${p.id}" data-on="${p.enabled}">${p.enabled ? "disable" : "enable"}</button>
+      <button class="ghost" data-savepair="${p.id}">Save</button></td></tr>`).join("");
+  $("pairs").querySelectorAll("[data-savepair]").forEach((b) => b.onclick = async () => {
+    const row = document.querySelector(`[data-pair="${b.dataset.savepair}"]`);
+    try { await api(`/api/admin/sim/pairs/${b.dataset.savepair}`, "PATCH", { base_price: Number(row.querySelector('[data-f="base_price"]').value), win_rate_pct: Number(row.querySelector('[data-f="win_rate_pct"]').value) }); toast("Pair saved"); }
+    catch (e) { toast(e.message); }
+  });
+  $("pairs").querySelectorAll("[data-toggle]").forEach((b) => b.onclick = async () => {
+    try { await api(`/api/admin/sim/pairs/${b.dataset.toggle}`, "PATCH", { enabled: b.dataset.on === "1" ? 0 : 1 }); toast("Toggled"); load(); }
+    catch (e) { toast(e.message); }
+  });
+
+  $("accounts").innerHTML = (s.accounts || []).length ? s.accounts.map((a) => `<tr>
+    <td>${esc(a.email || a.user_id)}</td><td>${esc(a.plan_id)}</td><td>${esc(a.trades_today)}</td>
+    <td><span class="pill ${a.status === "active" ? "on" : "off"}">${esc(a.status)}</span></td>
+    <td><button class="ghost" data-reset="${a.user_id}">Reset</button></td></tr>`).join("")
+    : `<tr><td colspan="5" class="muted">No accounts.</td></tr>`;
+  $("accounts").querySelectorAll("[data-reset]").forEach((b) => b.onclick = async () => {
+    try { await api(`/api/admin/sim/accounts/${b.dataset.reset}/reset`, "POST", {}); toast("Reset"); load(); }
+    catch (e) { toast(e.message); }
+  });
+}
+
+load();
+setInterval(() => !document.hidden && load().catch(() => {}), 20000);
+</script>
+</body>
+</html>

